@@ -1,6 +1,6 @@
 # RPC API Specification
 
-Version: 4.38.x
+Version: 5.1.x
 
 **Note:** This document assumes the reader is familiar with gRPC concepts.
 Refer to the [gRPC Concepts documentation](http://www.grpc.io/docs/guides/concepts.html)
@@ -98,6 +98,9 @@ no dependencies and is always running.
 - [`DiscoverAddresses`](#discoveraddresses)
 - [`SubscribeToBlockNotifications`](#subscribetoblocknotifications)
 - [`FetchHeaders`](#fetchheaders)
+- [`FetchMissingCFilters`](#fetchmissingcfilters)
+- [`RescanPoint`](#rescanpoint)
+- [`SpvSync`](#spvsync)
 
 **Shared messages:**
 
@@ -304,6 +307,8 @@ for querying for known used addresses).  Account discovery requires the wallet
 to be unlocked in order to derive account hardened extended pubkeys, and thus
 the private passphrase must be passed as a parameter when performing this
 action.  Account discovery is typically only required when reseeding a wallet.
+Address discovery begins at the provided starting block hash.  If none
+is provided, then the current network's genesis hash will be used.
 
 **Request:** `DiscoverAddressesRequest`
 
@@ -313,6 +318,9 @@ action.  Account discovery is typically only required when reseeding a wallet.
 - `bytes private_passphrase`: The private passphrase to unlock the wallet when
   account discovery is enabled.
 
+- `bytes starting_block_hash`: The hash of the first block checked for address
+  and account usage.  This must also be a valid hash of a main chain block.
+
 **Response:** `DiscoverAddressesResponse`
 
 **Expected Errors:**
@@ -320,7 +328,8 @@ action.  Account discovery is typically only required when reseeding a wallet.
 - `FailedPrecondition`: The wallet or consensus RPC server has not been opened.
 
 - `InvalidArgument`: A zero length passphrase passphrase was specified when
-  account discovery was enabled, or the passphrase was incorrect.
+  account discovery was enabled, or the passphrase was incorrect, or if an 
+  invalid starting block hash is provided.
 
 **Stability:** Unstable
 
@@ -374,6 +383,79 @@ should begin at.
 **Expected errors:**
 
 - `FailedPrecondition`: The wallet or consensus RPC server has not been opened.
+
+**Stability:** Unstable
+___
+
+#### `FetchMissingCFilters`
+
+The `FetchMissingCFilters` method fetches any missing committed filters for
+blocks in the wallet's main chain.
+
+**Request:** `FetchMissingCFiltersRequest`
+
+**Response:** `FetchMissingCFiltersResponse`
+
+**Expected errors:**
+
+- `FailedPrecondition`: The wallet or consensus RPC server has not been opened.
+
+**Stability:** Unstable
+___
+
+#### `RescanPoint`
+
+The `RescanPoint` returns the block hash at which a rescan should begin
+(inclusive), or null when no rescan is necessary.  A non-null rescan point
+indicates that blocks currently in the main chain must be checked for address
+usage and relevant transactions.
+
+**Request:** `RescanPointRequest`
+
+**Response:** `RescanPointResponse`
+
+- `bytes rescan_point`: The current hash of the rescan point.
+
+**Expected Errors:**
+
+- `FailedPrecondition`: The wallet or consensus RPC server has not been opened.
+
+**Stability:** Unstable
+___
+
+#### `SpvSync`
+
+The `SpvSync` method begins the spv syncing process.  It will
+stream back progress to provide feedback on the current state of the wallet
+loading/bringup.  This is a long lived RPC and only end when canceled
+or upon received an error.
+
+**Request:** `SpvSyncRequest`
+
+- `bool discover_accounts`:  Whether or not the wallet should attempt to
+  discover accounts during discovery.  This requires the private passphrase to
+  be set as well and will error otherwise.
+
+- `bytes private_passphrase`: The current private passphrase for the wallet.
+  This is only required if discover_accounts is set to true and will error
+  otherwise.
+
+- `repeated string spv_connect`: When given a list of addresses, the wallet in
+  spv mode will no longer attempt to use DNS address discovery to seek out other
+  persistent peers and instead use the ones specified here as persistent peers.
+
+**Response:** `stream SpvSyncResponse`
+
+- `bool synced`: This streamed update response denotes whether the wallet is
+  currently synced to its peers or not.
+
+**Expected Errors:**
+
+- `FailedPrecondition`: The wallet or consensus RPC server has not been opened.
+  The private passphrase does not successfully unlock the wallet.  The string
+  provided to spv_connect is not a valid address or port.
+
+- `InvalidArgument`: The private passphrase is incorrect.
 
 **Stability:** Unstable
 
@@ -625,6 +707,23 @@ but not all sidechain blocks may be known by the wallet.
 
 **Stability:** Unstable
 
+___
+
+#### `GetAccountExtendedPubKey`
+
+The `GetAccountExtendedPubKey` method queries the wallet for an account pubkey.
+
+**Request:** `GetAccountExtendedPubKeyRequest`
+
+- `uint32 account_number`: The number of the account to retrieve the pubkey.
+
+**Response:** `GetAccountExtendedPubKeyResponse`
+
+- `string acc_extended_pub_key`: The account's extended key.
+
+**Expected errors:**
+
+- `NotFound`: The account does not exist.
 ___
 
 #### `GetTransaction`
@@ -1340,6 +1439,9 @@ change output is added, it is inserted at a random output position.
 
 - `uint32 estimated_signed_size`: An estimated size of the transaction once the
   transaction is signed.
+
+- `int32 change_index`: The index of the change output or -1 if no change
+  output was created.
 
 **Expected errors:**
 

@@ -8,15 +8,14 @@ package txauthor
 
 import (
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/chaincfg/chainec"
+	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/txrules"
-
 	h "github.com/picfight/pfcwallet/internal/helpers"
 	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
+	"github.com/picfight/pfcwallet/wallet/txrules"
 )
 
 const (
@@ -29,12 +28,22 @@ const (
 	generatedTxVersion = 1
 )
 
+// InputDetail provides a detailed summary of transaction inputs
+// referencing spendable outputs. This consists of the total spendable
+// amount, the generated inputs, the redeem scripts and the full redeem
+// script sizes.
+type InputDetail struct {
+	Amount            pfcutil.Amount
+	Inputs            []*wire.TxIn
+	Scripts           [][]byte
+	RedeemScriptSizes []int
+}
+
 // InputSource provides transaction inputs referencing spendable outputs to
 // construct a transaction outputting some target amount.  If the target amount
 // can not be satisified, this can be signaled by returning a total amount less
 // than the target or by returning a more detailed error.
-type InputSource func(target pfcutil.Amount) (total pfcutil.Amount,
-	inputs []*wire.TxIn, scripts [][]byte, err error)
+type InputSource func(target pfcutil.Amount) (detail *InputDetail, err error)
 
 // AuthoredTx holds the state of a newly-created transaction and the change
 // output (if one was added).
@@ -46,9 +55,12 @@ type AuthoredTx struct {
 	EstimatedSignedSerializeSize int
 }
 
-// ChangeSource provides P2PKH change output scripts and versions for
+// ChangeSource provides change output scripts and versions for
 // transaction creation.
-type ChangeSource func() ([]byte, uint16, error)
+type ChangeSource interface {
+	Script() (script []byte, version uint16, err error)
+	ScriptSize() int
+}
 
 // NewUnsignedTransaction creates an unsigned transaction paying to one or more
 // non-change outputs.  An appropriate transaction fee is included based on the
@@ -68,36 +80,37 @@ type ChangeSource func() ([]byte, uint16, error)
 // output scripts are returned.  If the input source was unable to provide
 // enough input value to pay for every output any any necessary fees, an
 // InputSourceError is returned.
-//
-// BUGS: Fee estimation may be off when redeeming non-compressed P2PKH outputs.
 func NewUnsignedTransaction(outputs []*wire.TxOut, relayFeePerKb pfcutil.Amount,
 	fetchInputs InputSource, fetchChange ChangeSource) (*AuthoredTx, error) {
 
 	const op errors.Op = "txauthor.NewUnsignedTransaction"
 
 	targetAmount := h.SumOutputValues(outputs)
-	scriptSizers := []txsizes.ScriptSizer{txsizes.P2PKHScriptSize}
-	estimatedSize := txsizes.EstimateSerializeSize(scriptSizers, outputs, true)
-	targetFee := txrules.FeeForSerializeSize(relayFeePerKb, estimatedSize)
+	scriptSizes := []int{txsizes.RedeemP2PKHSigScriptSize}
+	changeScript, changeScriptVersion, err := fetchChange.Script()
+	if err != nil {
+		return nil, errors.E(op, err)
+	}
+	changeScriptSize := fetchChange.ScriptSize()
+	maxSignedSize := txsizes.EstimateSerializeSize(scriptSizes, outputs, changeScriptSize)
+	targetFee := txrules.FeeForSerializeSize(relayFeePerKb, maxSignedSize)
 
 	for {
-		inputAmount, inputs, scripts, err := fetchInputs(targetAmount + targetFee)
+		inputDetail, err := fetchInputs(targetAmount + targetFee)
 		if err != nil {
 			return nil, errors.E(op, err)
 		}
 
-		if inputAmount < targetAmount+targetFee {
+		if inputDetail.Amount < targetAmount+targetFee {
 			return nil, errors.E(op, errors.InsufficientBalance)
 		}
 
-		scriptSizers := []txsizes.ScriptSizer{}
-		for range inputs {
-			scriptSizers = append(scriptSizers, txsizes.P2PKHScriptSize)
-		}
+		scriptSizes = []int{}
+		scriptSizes = append(scriptSizes, inputDetail.RedeemScriptSizes...)
 
-		maxSignedSize := txsizes.EstimateSerializeSize(scriptSizers, outputs, true)
+		maxSignedSize = txsizes.EstimateSerializeSize(scriptSizes, outputs, changeScriptSize)
 		maxRequiredFee := txrules.FeeForSerializeSize(relayFeePerKb, maxSignedSize)
-		remainingAmount := inputAmount - targetAmount
+		remainingAmount := inputDetail.Amount - targetAmount
 		if remainingAmount < maxRequiredFee {
 			targetFee = maxRequiredFee
 			continue
@@ -106,22 +119,18 @@ func NewUnsignedTransaction(outputs []*wire.TxOut, relayFeePerKb pfcutil.Amount,
 		unsignedTransaction := &wire.MsgTx{
 			SerType:  wire.TxSerializeFull,
 			Version:  generatedTxVersion,
-			TxIn:     inputs,
+			TxIn:     inputDetail.Inputs,
 			TxOut:    outputs,
 			LockTime: 0,
 			Expiry:   0,
 		}
 		changeIndex := -1
-		changeAmount := inputAmount - targetAmount - maxRequiredFee
+		changeAmount := inputDetail.Amount - targetAmount - maxRequiredFee
 		if changeAmount != 0 && !txrules.IsDustAmount(changeAmount,
-			txsizes.P2PKHPkScriptSize, relayFeePerKb) {
-			changeScript, changeScriptVersion, err := fetchChange()
-			if err != nil {
-				return nil, errors.E(op, err)
-			}
-			if len(changeScript) > txsizes.P2PKHPkScriptSize {
-				return nil, errors.E(op, "fee estimation requires change "+
-					"scripts no larger than P2PKH output scripts")
+			changeScriptSize, relayFeePerKb) {
+			if len(changeScript) > txscript.MaxScriptElementSize {
+				return nil, errors.E(errors.Invalid, "script size exceed maximum bytes "+
+					"pushable to the stack")
 			}
 			change := &wire.TxOut{
 				Value:    int64(changeAmount),
@@ -131,16 +140,16 @@ func NewUnsignedTransaction(outputs []*wire.TxOut, relayFeePerKb pfcutil.Amount,
 			l := len(outputs)
 			unsignedTransaction.TxOut = append(outputs[:l:l], change)
 			changeIndex = l
+		} else {
+			maxSignedSize = txsizes.EstimateSerializeSize(scriptSizes,
+				unsignedTransaction.TxOut, 0)
 		}
-
-		estSignedSize := txsizes.EstimateSerializeSize(scriptSizers,
-			unsignedTransaction.TxOut, false)
 		return &AuthoredTx{
 			Tx:                           unsignedTransaction,
-			PrevScripts:                  scripts,
-			TotalInput:                   inputAmount,
+			PrevScripts:                  inputDetail.Scripts,
+			TotalInput:                   inputDetail.Amount,
 			ChangeIndex:                  changeIndex,
-			EstimatedSignedSerializeSize: estSignedSize,
+			EstimatedSignedSerializeSize: maxSignedSize,
 		}, nil
 	}
 }
@@ -196,7 +205,7 @@ func AddAllInputScripts(tx *wire.MsgTx, prevPkScripts [][]byte, secrets SecretsS
 		sigScript := inputs[i].SignatureScript
 		script, err := txscript.SignTxOutput(chainParams, tx, i,
 			pkScript, txscript.SigHashAll, secrets, secrets,
-			sigScript, chainec.ECTypeSecp256k1)
+			sigScript, pfcec.STEcdsaSecp256k1)
 		if err != nil {
 			return err
 		}

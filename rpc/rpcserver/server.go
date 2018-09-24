@@ -18,25 +18,27 @@ package rpcserver
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/picfight/pfcd/addrmgr"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/chaincfg/chainec"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/chain"
@@ -46,7 +48,9 @@ import (
 	"github.com/picfight/pfcwallet/internal/zero"
 	"github.com/picfight/pfcwallet/loader"
 	"github.com/picfight/pfcwallet/netparams"
+	"github.com/picfight/pfcwallet/p2p"
 	pb "github.com/picfight/pfcwallet/rpc/walletrpc"
+	"github.com/picfight/pfcwallet/spv"
 	"github.com/picfight/pfcwallet/ticketbuyer"
 	"github.com/picfight/pfcwallet/wallet"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
@@ -57,9 +61,9 @@ import (
 
 // Public API version constants
 const (
-	semverString = "4.37.0"
-	semverMajor  = 4
-	semverMinor  = 37
+	semverString = "5.1.0"
+	semverMajor  = 5
+	semverMinor  = 1
 	semverPatch  = 0
 )
 
@@ -371,12 +375,29 @@ func (s *walletServer) Rescan(req *pb.RescanRequest, svr pb.WalletService_Rescan
 		return err
 	}
 
-	if req.BeginHeight < 0 {
+	var blockID *wallet.BlockIdentifier
+	switch {
+	case req.BeginHash != nil && req.BeginHeight != 0:
+		return status.Errorf(codes.InvalidArgument, "begin hash and height must not be set together")
+	case req.BeginHeight < 0:
 		return status.Errorf(codes.InvalidArgument, "begin height must be non-negative")
+	case req.BeginHash != nil:
+		blockHash, err := chainhash.NewHash(req.BeginHash)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "block hash has invalid length")
+		}
+		blockID = wallet.NewBlockIdentifierFromHash(blockHash)
+	default:
+		blockID = wallet.NewBlockIdentifierFromHeight(req.BeginHeight)
+	}
+
+	b, err := s.wallet.BlockInfo(blockID)
+	if err != nil {
+		return translateError(err)
 	}
 
 	progress := make(chan wallet.RescanProgress, 1)
-	go s.wallet.RescanProgressFromHeight(svr.Context(), n, req.BeginHeight, progress)
+	go s.wallet.RescanProgressFromHeight(svr.Context(), n, b.Height, progress)
 
 	for p := range progress {
 		if p.Err != nil {
@@ -624,8 +645,16 @@ func (s *walletServer) Balance(ctx context.Context, req *pb.BalanceRequest) (
 	return resp, nil
 }
 
-func (s *walletServer) TicketPrice(ctx context.Context,
-	req *pb.TicketPriceRequest) (*pb.TicketPriceResponse, error) {
+func (s *walletServer) TicketPrice(ctx context.Context, req *pb.TicketPriceRequest) (*pb.TicketPriceResponse, error) {
+	sdiff, err := s.wallet.NextStakeDifficulty()
+	if err == nil {
+		_, tipHeight := s.wallet.MainChainTip()
+		resp := &pb.TicketPriceResponse{
+			TicketPrice: int64(sdiff),
+			Height:      tipHeight,
+		}
+		return resp, nil
+	}
 
 	n, err := s.requireNetworkBackend()
 	if err != nil {
@@ -636,7 +665,7 @@ func (s *walletServer) TicketPrice(ctx context.Context,
 		return nil, translateError(err)
 	}
 
-	ticketPrice, err := s.wallet.StakeDifficulty()
+	ticketPrice, err := n.StakeDifficulty(ctx)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -652,19 +681,22 @@ func (s *walletServer) TicketPrice(ctx context.Context,
 }
 
 func (s *walletServer) StakeInfo(ctx context.Context, req *pb.StakeInfoRequest) (*pb.StakeInfoResponse, error) {
-	n, err := s.requireNetworkBackend()
-	if err != nil {
-		return nil, err
+	var chainClient *rpcclient.Client
+	if n, err := s.wallet.NetworkBackend(); err == nil {
+		client, err := chain.RPCClientFromBackend(n)
+		if err == nil {
+			chainClient = client
+		}
 	}
-	chainClient, err := chain.RPCClientFromBackend(n)
+	var si *wallet.StakeInfoData
+	var err error
+	if chainClient != nil {
+		si, err = s.wallet.StakeInfoPrecise(chainClient)
+	} else {
+		si, err = s.wallet.StakeInfo()
+	}
 	if err != nil {
 		return nil, translateError(err)
-	}
-
-	si, err := s.wallet.StakeInfo(chainClient)
-	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"Failed to query stake info: %s", err.Error())
 	}
 
 	return &pb.StakeInfoResponse{
@@ -723,7 +755,7 @@ func (s *walletServer) UnspentOutputs(req *pb.UnspentOutputsRequest, svr pb.Wall
 		Account:               req.Account,
 		RequiredConfirmations: req.RequiredConfirmations,
 	}
-	_, inputs, scripts, err := s.wallet.SelectInputs(pfcutil.Amount(req.TargetAmount), policy)
+	inputDetail, err := s.wallet.SelectInputs(pfcutil.Amount(req.TargetAmount), policy)
 	// Do not return errors to caller when there was insufficient spendable
 	// outputs available for the target amount.
 	if err != nil && !errors.Is(errors.InsufficientBalance, err) {
@@ -731,7 +763,7 @@ func (s *walletServer) UnspentOutputs(req *pb.UnspentOutputsRequest, svr pb.Wall
 	}
 
 	var sum int64
-	for i, input := range inputs {
+	for i, input := range inputDetail.Inputs {
 		select {
 		case <-svr.Context().Done():
 			return status.Errorf(codes.Canceled, "unspentoutputs cancelled")
@@ -745,7 +777,7 @@ func (s *walletServer) UnspentOutputs(req *pb.UnspentOutputsRequest, svr pb.Wall
 				OutputIndex:     input.PreviousOutPoint.Index,
 				Tree:            int32(input.PreviousOutPoint.Tree),
 				Amount:          int64(outputInfo.Amount),
-				PkScript:        scripts[i],
+				PkScript:        inputDetail.Scripts[i],
 				ReceiveTime:     outputInfo.Received.Unix(),
 				FromCoinbase:    outputInfo.FromCoinbase,
 			}
@@ -769,15 +801,15 @@ func (s *walletServer) FundTransaction(ctx context.Context, req *pb.FundTransact
 		Account:               req.Account,
 		RequiredConfirmations: req.RequiredConfirmations,
 	}
-	totalAmount, inputs, scripts, err := s.wallet.SelectInputs(pfcutil.Amount(req.TargetAmount), policy)
+	inputDetail, err := s.wallet.SelectInputs(pfcutil.Amount(req.TargetAmount), policy)
 	// Do not return errors to caller when there was insufficient spendable
 	// outputs available for the target amount.
 	if err != nil && !errors.Is(errors.InsufficientBalance, err) {
 		return nil, translateError(err)
 	}
 
-	selectedOutputs := make([]*pb.FundTransactionResponse_PreviousOutput, len(inputs))
-	for i, input := range inputs {
+	selectedOutputs := make([]*pb.FundTransactionResponse_PreviousOutput, len(inputDetail.Inputs))
+	for i, input := range inputDetail.Inputs {
 		outputInfo, err := s.wallet.OutputInfo(&input.PreviousOutPoint)
 		if err != nil {
 			return nil, translateError(err)
@@ -787,14 +819,14 @@ func (s *walletServer) FundTransaction(ctx context.Context, req *pb.FundTransact
 			OutputIndex:     input.PreviousOutPoint.Index,
 			Tree:            int32(input.PreviousOutPoint.Tree),
 			Amount:          int64(outputInfo.Amount),
-			PkScript:        scripts[i],
+			PkScript:        inputDetail.Scripts[i],
 			ReceiveTime:     outputInfo.Received.Unix(),
 			FromCoinbase:    outputInfo.FromCoinbase,
 		}
 	}
 
 	var changeScript []byte
-	if req.IncludeChangeScript && totalAmount > pfcutil.Amount(req.TargetAmount) {
+	if req.IncludeChangeScript && inputDetail.Amount > pfcutil.Amount(req.TargetAmount) {
 		changeAddr, err := s.wallet.NewChangeAddress(req.Account)
 		if err != nil {
 			return nil, translateError(err)
@@ -807,7 +839,7 @@ func (s *walletServer) FundTransaction(ctx context.Context, req *pb.FundTransact
 
 	return &pb.FundTransactionResponse{
 		SelectedOutputs: selectedOutputs,
-		TotalAmount:     int64(totalAmount),
+		TotalAmount:     int64(inputDetail.Amount),
 		ChangePkScript:  changeScript,
 	}, nil
 }
@@ -838,6 +870,32 @@ func decodeDestination(dest *pb.ConstructTransactionRequest_OutputDestination,
 		}
 		return dest.Script, uint16(dest.ScriptVersion), nil
 	}
+}
+
+type txChangeSource struct {
+	version uint16
+	script  []byte
+}
+
+func (src *txChangeSource) Script() ([]byte, uint16, error) {
+	return src.script, src.version, nil
+}
+
+func (src *txChangeSource) ScriptSize() int {
+	return len(src.script)
+}
+
+func makeTxChangeSource(destination *pb.ConstructTransactionRequest_OutputDestination,
+	chainParams *chaincfg.Params) (*txChangeSource, error) {
+	script, version, err := decodeDestination(destination, chainParams)
+	if err != nil {
+		return nil, err
+	}
+	changeSource := &txChangeSource{
+		script:  script,
+		version: version,
+	}
+	return changeSource, nil
 }
 
 func (s *walletServer) ConstructTransaction(ctx context.Context, req *pb.ConstructTransactionRequest) (
@@ -880,12 +938,12 @@ func (s *walletServer) ConstructTransaction(ctx context.Context, req *pb.Constru
 	}
 
 	var changeSource txauthor.ChangeSource
+	var err error
 	if req.ChangeDestination != nil {
-		script, version, err := decodeDestination(req.ChangeDestination, chainParams)
+		changeSource, err = makeTxChangeSource(req.ChangeDestination, chainParams)
 		if err != nil {
-			return nil, err
+			return nil, translateError(err)
 		}
-		changeSource = func() ([]byte, uint16, error) { return script, version, nil }
 	}
 
 	tx, err := s.wallet.NewUnsignedTransaction(outputs, feePerKb, req.SourceAccount,
@@ -910,6 +968,18 @@ func (s *walletServer) ConstructTransaction(ctx context.Context, req *pb.Constru
 		TotalPreviousOutputAmount: int64(tx.TotalInput),
 		TotalOutputAmount:         int64(h.SumOutputValues(tx.Tx.TxOut)),
 		EstimatedSignedSize:       uint32(tx.EstimatedSignedSerializeSize),
+		ChangeIndex:               int32(tx.ChangeIndex),
+	}
+	return res, nil
+}
+
+func (s *walletServer) GetAccountExtendedPubKey(ctx context.Context, req *pb.GetAccountExtendedPubKeyRequest) (*pb.GetAccountExtendedPubKeyResponse, error) {
+	accExtendedPubKey, err := s.wallet.MasterPubKey(req.AccountNumber)
+	if err != nil {
+		return nil, err
+	}
+	res := &pb.GetAccountExtendedPubKeyResponse{
+		AccExtendedPubKey: accExtendedPubKey.String(),
 	}
 	return res, nil
 }
@@ -1023,14 +1093,6 @@ func (s *walletServer) GetTransactions(req *pb.GetTransactionsRequest,
 
 func (s *walletServer) GetTickets(req *pb.GetTicketsRequest,
 	server pb.WalletService_GetTicketsServer) error {
-	n, err := s.requireNetworkBackend()
-	if err != nil {
-		return err
-	}
-	chainClient, err := chain.RPCClientFromBackend(n)
-	if err != nil {
-		return translateError(err)
-	}
 
 	var startBlock, endBlock *wallet.BlockIdentifier
 	if req.StartingBlockHash != nil && req.StartingBlockHeight != 0 {
@@ -1092,8 +1154,19 @@ func (s *walletServer) GetTickets(req *pb.GetTicketsRequest,
 			return ((targetTicketCount > 0) && (ticketCount >= targetTicketCount)), nil
 		}
 	}
-
-	err = s.wallet.GetTickets(rangeFn, chainClient, startBlock, endBlock)
+	var chainClient *rpcclient.Client
+	if n, err := s.wallet.NetworkBackend(); err == nil {
+		client, err := chain.RPCClientFromBackend(n)
+		if err == nil {
+			chainClient = client
+		}
+	}
+	var err error
+	if chainClient != nil {
+		err = s.wallet.GetTicketsPrecise(rangeFn, chainClient, startBlock, endBlock)
+	} else {
+		err = s.wallet.GetTickets(rangeFn, startBlock, endBlock)
+	}
 	if err != nil {
 		return translateError(err)
 	}
@@ -1417,10 +1490,6 @@ func (s *walletServer) RevokeTickets(ctx context.Context, req *pb.RevokeTicketsR
 	if err != nil {
 		return nil, err
 	}
-	chainClient, err := chain.RPCClientFromBackend(n)
-	if err != nil {
-		return nil, translateError(err)
-	}
 
 	lock := make(chan time.Time, 1)
 	defer func() {
@@ -1429,6 +1498,20 @@ func (s *walletServer) RevokeTickets(ctx context.Context, req *pb.RevokeTicketsR
 	err = s.wallet.Unlock(req.Passphrase, lock)
 	if err != nil {
 		return nil, translateError(err)
+	}
+
+	// The wallet is not locally aware of when tickets are selected to vote and
+	// when they are missed.  RevokeTickets uses trusted RPCs to determine which
+	// tickets were missed.  RevokeExpiredTickets is only able to create
+	// revocations for tickets which have reached their expiry time even if they
+	// were missed prior to expiry, but is able to be used with other backends.
+	chainClient, err := chain.RPCClientFromBackend(n)
+	if err != nil {
+		err := s.wallet.RevokeExpiredTickets(ctx, n)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		return &pb.RevokeTicketsResponse{}, nil
 	}
 
 	err = s.wallet.RevokeTickets(chainClient)
@@ -1446,7 +1529,7 @@ func (s *walletServer) LoadActiveDataFilters(ctx context.Context, req *pb.LoadAc
 		return nil, err
 	}
 
-	err = s.wallet.LoadActiveDataFilters(n)
+	err = s.wallet.LoadActiveDataFilters(ctx, n, false)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -1508,7 +1591,7 @@ func (s *walletServer) signMessage(address, message string) ([]byte, error) {
 	switch a := addr.(type) {
 	case *pfcutil.AddressSecpPubKey:
 	case *pfcutil.AddressPubKeyHash:
-		if a.DSA(a.Net()) != chainec.ECTypeSecp256k1 {
+		if a.DSA(a.Net()) != pfcec.STEcdsaSecp256k1 {
 			goto WrongAddrKind
 		}
 	default:
@@ -2182,7 +2265,7 @@ func (s *loaderServer) StartConsensusRpc(ctx context.Context, req *pb.StartConse
 
 	err = rpcClient.Start(ctx, false)
 	if err != nil {
-		if err == pfcrpcclient.ErrInvalidAuth {
+		if err == rpcclient.ErrInvalidAuth {
 			return nil, status.Errorf(codes.InvalidArgument,
 				"Invalid RPC credentials: %v", err)
 		}
@@ -2191,7 +2274,7 @@ func (s *loaderServer) StartConsensusRpc(ctx context.Context, req *pb.StartConse
 	}
 
 	s.rpcClient = rpcClient
-	s.loader.SetChainClient(rpcClient.Client)
+	s.loader.SetNetworkBackend(chain.BackendFromRPCClient(rpcClient.Client))
 
 	return &pb.StartConsensusRpcResponse{}, nil
 }
@@ -2226,14 +2309,127 @@ func (s *loaderServer) DiscoverAddresses(ctx context.Context, req *pb.DiscoverAd
 			return nil, translateError(err)
 		}
 	}
-
 	n := chain.BackendFromRPCClient(chainClient.Client)
-	err := wallet.DiscoverActiveAddresses(n, req.DiscoverAccounts)
+	startHash := wallet.ChainParams().GenesisHash
+	var err error
+	if req.StartingBlockHash != nil {
+		startHash, err = chainhash.NewHash(req.StartingBlockHash)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "Invalid starting block hash provided: %v", err)
+		}
+	}
+	err = wallet.DiscoverActiveAddresses(ctx, n, startHash, req.DiscoverAccounts)
 	if err != nil {
 		return nil, translateError(err)
 	}
 
 	return &pb.DiscoverAddressesResponse{}, nil
+}
+
+func (s *loaderServer) FetchMissingCFilters(ctx context.Context, req *pb.FetchMissingCFiltersRequest) (
+	*pb.FetchMissingCFiltersResponse, error) {
+
+	wallet, ok := s.loader.LoadedWallet()
+	if !ok {
+		return nil, status.Errorf(codes.FailedPrecondition, "Wallet has not been loaded")
+	}
+
+	n := chain.BackendFromRPCClient(s.rpcClient.Client)
+	// Fetch any missing main chain compact filters.
+	err := wallet.FetchMissingCFilters(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.FetchMissingCFiltersResponse{}, nil
+}
+
+func (s *loaderServer) SpvSync(req *pb.SpvSyncRequest, svr pb.WalletLoaderService_SpvSyncServer) error {
+	wallet, ok := s.loader.LoadedWallet()
+	if !ok {
+		return status.Errorf(codes.FailedPrecondition, "Wallet has not been loaded")
+	}
+
+	if req.DiscoverAccounts && len(req.PrivatePassphrase) == 0 {
+		return status.Errorf(codes.InvalidArgument, "private passphrase is required for discovering accounts")
+	}
+	var lockWallet func()
+	if req.DiscoverAccounts {
+		lock := make(chan time.Time, 1)
+		lockWallet = func() {
+			lock <- time.Time{}
+			zero.Bytes(req.PrivatePassphrase)
+		}
+		err := wallet.Unlock(req.PrivatePassphrase, lock)
+		if err != nil {
+			return translateError(err)
+		}
+	}
+	addr := &net.TCPAddr{IP: net.ParseIP("::1"), Port: 0}
+	amgr := addrmgr.New(s.loader.DbDirPath(), net.LookupIP) // TODO: be mindful of tor
+	lp := p2p.NewLocalPeer(wallet.ChainParams(), addr, amgr)
+
+	ntfns := &spv.Notifications{
+		Synced: func(sync bool) {
+			resp := &pb.SpvSyncResponse{Synced: sync}
+
+			// Lock the wallet after the first time synced while also
+			// discovering accounts.
+			if sync && lockWallet != nil {
+				lockWallet()
+				lockWallet = nil
+			}
+
+			// TODO: Add some kind of logging here.  Do nothing with the error
+			// for now. Could be nice to see what happened, but not super
+			// important.
+			_ = svr.Send(resp)
+		},
+	}
+	syncer := spv.NewSyncer(wallet, lp)
+	syncer.SetNotifications(ntfns)
+	if len(req.SpvConnect) > 0 {
+		spvConnects := make([]string, len(req.SpvConnect))
+		for i := 0; i < len(req.SpvConnect); i++ {
+			spvConnect, err := cfgutil.NormalizeAddress(req.SpvConnect[i], s.activeNet.Params.DefaultPort)
+			if err != nil {
+				return status.Errorf(codes.FailedPrecondition, "SPV Connect address invalid: %v", err)
+			}
+			spvConnects[i] = spvConnect
+		}
+		syncer.SetPersistantPeers(spvConnects)
+	}
+
+	wallet.SetNetworkBackend(syncer)
+	s.loader.SetNetworkBackend(syncer)
+
+	err := syncer.Run(svr.Context())
+	if err != nil {
+		if err == context.Canceled {
+			return status.Errorf(codes.Canceled, "SPV synchronization canceled: %v", err)
+		} else if err == context.DeadlineExceeded {
+			return status.Errorf(codes.DeadlineExceeded, "SPV synchronization deadline exceeded: %v", err)
+		}
+		return translateError(err)
+	}
+	return nil
+}
+
+func (s *loaderServer) RescanPoint(ctx context.Context, req *pb.RescanPointRequest) (*pb.RescanPointResponse, error) {
+	wallet, ok := s.loader.LoadedWallet()
+	if !ok {
+		return nil, status.Errorf(codes.FailedPrecondition, "Wallet has not been loaded")
+	}
+	rescanPoint, err := wallet.RescanPoint()
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "Rescan point failed to be requested %v", err)
+	}
+	if rescanPoint != nil {
+		return &pb.RescanPointResponse{
+			RescanPointHash: rescanPoint[:],
+		}, nil
+	}
+	return &pb.RescanPointResponse{RescanPointHash: nil}, nil
 }
 
 func (s *loaderServer) SubscribeToBlockNotifications(ctx context.Context, req *pb.SubscribeToBlockNotificationsRequest) (
@@ -2285,7 +2481,7 @@ func (s *loaderServer) FetchHeaders(ctx context.Context, req *pb.FetchHeadersReq
 	n := chain.BackendFromRPCClient(chainClient.Client)
 
 	fetchedHeaderCount, rescanFrom, rescanFromHeight,
-		mainChainTipBlockHash, mainChainTipBlockHeight, err := wallet.FetchHeaders(n)
+		mainChainTipBlockHash, mainChainTipBlockHeight, err := wallet.FetchHeaders(ctx, n)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -2690,7 +2886,7 @@ func (s *messageVerificationServer) VerifyMessage(ctx context.Context, req *pb.V
 	switch a := addr.(type) {
 	case *pfcutil.AddressSecpPubKey:
 	case *pfcutil.AddressPubKeyHash:
-		if a.DSA(a.Net()) != chainec.ECTypeSecp256k1 {
+		if a.DSA(a.Net()) != pfcec.STEcdsaSecp256k1 {
 			goto WrongAddrKind
 		}
 	default:

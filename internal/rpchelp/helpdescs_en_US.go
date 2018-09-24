@@ -148,6 +148,8 @@ var helpDescsEnUS = map[string]string{
 	"getstakeinforesult-proportionmissed": "(Missed / (Missed + Voted))",
 	"getstakeinforesult-revoked":          "Number of missed tickets that were missed and then revoked",
 	"getstakeinforesult-expired":          "Number of tickets that have expired",
+	"getstakeinforesult-unspent":          "Number of unspent tickets",
+	"getstakeinforesult-unspentexpired":   "Number of unspent tickets which are past expiry",
 
 	// GetTickets help.
 	"gettickets--synopsis":       "Returning the hashes of the tickets currently owned by wallet.",
@@ -278,9 +280,10 @@ var helpDescsEnUS = map[string]string{
 	"listlockunspent--synopsis": "Returns a JSON array of outpoints marked as locked (with lockunspent) for this wallet session.",
 
 	// TransactionInput help.
-	"transactioninput-txid": "The transaction hash of the referenced output",
-	"transactioninput-vout": "The output index of the referenced output",
-	"transactioninput-tree": "The tree to generate transaction for",
+	"transactioninput-amount": "The the previous output amount",
+	"transactioninput-txid":   "The transaction hash of the referenced output",
+	"transactioninput-vout":   "The output index of the referenced output",
+	"transactioninput-tree":   "The tree to generate transaction for",
 
 	// ListReceivedByAccountCmd help.
 	"listreceivedbyaccount--synopsis":        "DEPRECATED -- Returns a JSON array of objects listing all accounts and the total amount received by each account.",

@@ -7,10 +7,10 @@ package cfgutil
 
 import "github.com/picfight/pfcd/pfcutil"
 
-// AddressFlag embeds a pfcutil.Address and implements the flags.Marshaler and
+// AddressFlag contains a pfcutil.Address and implements the flags.Marshaler and
 // Unmarshaler interfaces so it can be used as a config struct field.
 type AddressFlag struct {
-	pfcutil.Address
+	Address pfcutil.Address
 }
 
 // NewAddressFlag creates an AddressFlag with a default pfcutil.Address.

@@ -16,9 +16,11 @@ import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/gcs"
+	"github.com/picfight/pfcd/gcs/blockcf"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/walletdb"
-	_ "github.com/picfight/pfcwallet/walletdb/bdb"
+	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 func setup() (db walletdb.DB, s *Store, teardown func(), err error) {
@@ -38,25 +40,16 @@ func setup() (db walletdb.DB, s *Store, teardown func(), err error) {
 		db.Close()
 		os.RemoveAll(tmpDir)
 	}
-	tx, err := db.BeginReadWriteTx()
+	err = Initialize(db, &chaincfg.TestNet3Params, seed, pubPassphrase, privPassphrase)
 	if err != nil {
 		return
 	}
-	defer tx.Commit()
-	ns, err := tx.CreateTopLevelBucket(wtxmgrBucketKey)
-	if err != nil {
-		return
-	}
-	_, err = tx.CreateTopLevelBucket(waddrmgrBucketKey)
-	if err != nil {
-		return
-	}
-	err = createStore(ns, &chaincfg.TestNet2Params)
+	err = Upgrade(db, pubPassphrase, &chaincfg.TestNet3Params)
 	if err != nil {
 		return
 	}
 	acctLookup := func(walletdb.ReadBucket, pfcutil.Address) (uint32, error) { return 0, nil }
-	s = &Store{chainParams: &chaincfg.TestNet2Params, acctLookupFunc: acctLookup}
+	s = &Store{chainParams: &chaincfg.TestNet3Params, acctLookupFunc: acctLookup}
 	return
 }
 
@@ -97,7 +90,7 @@ type blockGenerator struct {
 }
 
 func makeBlockGenerator() blockGenerator {
-	return blockGenerator{lastHash: *chaincfg.TestNet2Params.GenesisHash}
+	return blockGenerator{lastHash: *chaincfg.TestNet3Params.GenesisHash}
 }
 
 func (g *blockGenerator) generate(voteBits uint16) *wire.BlockHeader {
@@ -129,6 +122,14 @@ func makeHeaderDataSlice(headers ...*wire.BlockHeader) []BlockHeaderData {
 		data = append(data, makeHeaderData(h))
 	}
 	return data
+}
+
+func emptyFilters(n int) []*gcs.Filter {
+	f := make([]*gcs.Filter, n)
+	for i := range f {
+		f[i], _ = gcs.FromBytes(0, blockcf.P, nil)
+	}
+	return f
 }
 
 func makeBlockMeta(h *wire.BlockHeader) *BlockMeta {

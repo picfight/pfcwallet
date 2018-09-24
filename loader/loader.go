@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2017 The btcsuite developers
+// Copyright (c) 2015-2018 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,12 +11,11 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcwallet/chain"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/ticketbuyer"
 	"github.com/picfight/pfcwallet/wallet"
-	"github.com/picfight/pfcwallet/walletdb"
-	_ "github.com/picfight/pfcwallet/walletdb/bdb" // driver loaded during init
+	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb" // driver loaded during init
 )
 
 const (
@@ -32,19 +31,22 @@ const (
 // Loader is safe for concurrent access.
 type Loader struct {
 	callbacks   []func(*wallet.Wallet)
-	chainClient *pfcrpcclient.Client
+	backend     wallet.NetworkBackend
 	chainParams *chaincfg.Params
 	dbDirPath   string
 	wallet      *wallet.Wallet
-	db          walletdb.DB
-	mu          sync.Mutex
+	db          wallet.DB
 
 	purchaseManager *ticketbuyer.PurchaseManager
 	ntfnClient      wallet.MainTipChangedNotificationsClient
+
 	stakeOptions    *StakeOptions
 	gapLimit        int
+	accountGapLimit int
 	allowHighFees   bool
 	relayFee        float64
+
+	mu sync.Mutex
 }
 
 // StakeOptions contains the various options necessary for stake mining.
@@ -60,21 +62,22 @@ type StakeOptions struct {
 
 // NewLoader constructs a Loader.
 func NewLoader(chainParams *chaincfg.Params, dbDirPath string, stakeOptions *StakeOptions, gapLimit int,
-	allowHighFees bool, relayFee float64) *Loader {
+	allowHighFees bool, relayFee float64, accountGapLimit int) *Loader {
 
 	return &Loader{
-		chainParams:   chainParams,
-		dbDirPath:     dbDirPath,
-		stakeOptions:  stakeOptions,
-		gapLimit:      gapLimit,
-		allowHighFees: allowHighFees,
-		relayFee:      relayFee,
+		chainParams:     chainParams,
+		dbDirPath:       dbDirPath,
+		stakeOptions:    stakeOptions,
+		gapLimit:        gapLimit,
+		accountGapLimit: accountGapLimit,
+		allowHighFees:   allowHighFees,
+		relayFee:        relayFee,
 	}
 }
 
 // onLoaded executes each added callback and prevents loader from loading any
 // additional wallets.  Requires mutex to be locked.
-func (l *Loader) onLoaded(w *wallet.Wallet, db walletdb.DB) {
+func (l *Loader) onLoaded(w *wallet.Wallet, db wallet.DB) {
 	for _, fn := range l.callbacks {
 		fn(w)
 	}
@@ -150,7 +153,7 @@ func (l *Loader) CreateWatchingOnlyWallet(extendedPubKey string, pubPass []byte)
 	if err != nil {
 		return nil, errors.E(op, err)
 	}
-	db, err := walletdb.Create("bdb", dbPath)
+	db, err := wallet.CreateDB("bdb", dbPath)
 	if err != nil {
 		return nil, errors.E(op, err)
 	}
@@ -173,6 +176,7 @@ func (l *Loader) CreateWatchingOnlyWallet(extendedPubKey string, pubPass []byte)
 		PoolFees:            so.PoolFees,
 		TicketFee:           so.TicketFee,
 		GapLimit:            l.gapLimit,
+		AccountGapLimit:     l.accountGapLimit,
 		StakePoolColdExtKey: so.StakePoolColdExtKey,
 		AllowHighFees:       l.allowHighFees,
 		RelayFee:            l.relayFee,
@@ -240,7 +244,7 @@ func (l *Loader) CreateNewWallet(pubPassphrase, privPassphrase, seed []byte) (w 
 	if err != nil {
 		return nil, errors.E(op, err)
 	}
-	db, err := walletdb.Create("bdb", dbPath)
+	db, err := wallet.CreateDB("bdb", dbPath)
 	if err != nil {
 		return nil, errors.E(op, err)
 	}
@@ -263,6 +267,7 @@ func (l *Loader) CreateNewWallet(pubPassphrase, privPassphrase, seed []byte) (w 
 		PoolFees:            so.PoolFees,
 		TicketFee:           so.TicketFee,
 		GapLimit:            l.gapLimit,
+		AccountGapLimit:     l.accountGapLimit,
 		StakePoolColdExtKey: so.StakePoolColdExtKey,
 		AllowHighFees:       l.allowHighFees,
 		RelayFee:            l.relayFee,
@@ -294,7 +299,7 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte) (w *wallet.Wallet, rer
 
 	// Open the database using the boltdb backend.
 	dbPath := filepath.Join(l.dbDirPath, walletDbName)
-	db, err := walletdb.Open("bdb", dbPath)
+	db, err := wallet.OpenDB("bdb", dbPath)
 	if err != nil {
 		log.Errorf("Failed to open database: %v", err)
 		return nil, errors.E(op, err)
@@ -320,6 +325,7 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte) (w *wallet.Wallet, rer
 		PoolFees:            so.PoolFees,
 		TicketFee:           so.TicketFee,
 		GapLimit:            l.gapLimit,
+		AccountGapLimit:     l.accountGapLimit,
 		StakePoolColdExtKey: so.StakePoolColdExtKey,
 		AllowHighFees:       l.allowHighFees,
 		RelayFee:            l.relayFee,
@@ -333,6 +339,11 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte) (w *wallet.Wallet, rer
 	w.Start()
 	l.onLoaded(w, db)
 	return w, nil
+}
+
+// DbDirPath returns the Loader's database directory path
+func (l *Loader) DbDirPath() string {
+	return l.dbDirPath
 }
 
 // WalletExists returns whether a file exists at the loader's database path.
@@ -362,7 +373,7 @@ func (l *Loader) LoadedWallet() (*wallet.Wallet, bool) {
 // CreateNewWallet or LoadExistingWallet.  The Loader may be reused if this
 // function returns without error.
 func (l *Loader) UnloadWallet() error {
-	const op errors.Op = "errors.UnloadWallet"
+	const op errors.Op = "loader.UnloadWallet"
 
 	defer l.mu.Unlock()
 	l.mu.Lock()
@@ -385,11 +396,20 @@ func (l *Loader) UnloadWallet() error {
 	return nil
 }
 
-// SetChainClient sets the chain server client.
-func (l *Loader) SetChainClient(chainClient *pfcrpcclient.Client) {
+// SetNetworkBackend associates the loader with a wallet network backend.
+func (l *Loader) SetNetworkBackend(n wallet.NetworkBackend) {
 	l.mu.Lock()
-	l.chainClient = chainClient
+	l.backend = n
 	l.mu.Unlock()
+}
+
+// NetworkBackend returns the associated wallet network backend, if any, and a
+// bool describing whether a non-nil network backend was set.
+func (l *Loader) NetworkBackend() (n wallet.NetworkBackend, ok bool) {
+	l.mu.Lock()
+	n = l.backend
+	l.mu.Unlock()
+	return n, n != nil
 }
 
 // StartTicketPurchase launches the ticketbuyer to start purchasing tickets.
@@ -408,12 +428,13 @@ func (l *Loader) StartTicketPurchase(passphrase []byte, ticketbuyerCfg *ticketbu
 		return errors.E(op, errors.Invalid, "wallet must be loaded")
 	}
 
-	if l.chainClient == nil {
+	c, err := chain.RPCClientFromBackend(l.backend)
+	if err != nil {
 		return errors.E(op, errors.Invalid, "pfcd RPC client must be loaded")
 	}
 
 	w := l.wallet
-	p, err := ticketbuyer.NewTicketPurchaser(ticketbuyerCfg, l.chainClient, w, l.chainParams)
+	p, err := ticketbuyer.NewTicketPurchaser(ticketbuyerCfg, c, w, l.chainParams)
 	if err != nil {
 		return errors.E(op, err)
 	}

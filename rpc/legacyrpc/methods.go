@@ -12,24 +12,27 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"sync"
 	"time"
 
+	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/chaincfg/chainec"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/chain"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/internal/helpers"
+	"github.com/picfight/pfcwallet/p2p"
+	ver "github.com/picfight/pfcwallet/version"
 	"github.com/picfight/pfcwallet/wallet"
-	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
 )
@@ -183,9 +186,14 @@ func lazyApplyHandler(s *Server, request *pfcjson.Request) lazyHandler {
 	handlerData, ok := handlers[request.Method]
 	if !ok {
 		return func() (interface{}, *pfcjson.RPCError) {
-			chainClient, ok := s.requireChainClient()
+			// Attempt RPC passthrough if possible
+			n, ok := s.walletLoader.NetworkBackend()
 			if !ok {
-				return nil, errClientNotConnected
+				return nil, errRPCClientNotConnected
+			}
+			chainClient, err := chain.RPCClientFromBackend(n)
+			if err != nil {
+				return nil, rpcErrorf(pfcjson.ErrRPCClientNotConnected, "RPC passthrough requires pfcd RPC synchronization")
 			}
 			resp, err := chainClient.RawRequest(request.Method, request.Params)
 			if err != nil {
@@ -325,7 +333,7 @@ func makeMultiSigScript(w *wallet.Wallet, keys []string, nRequired int) ([]byte,
 				}
 				return nil, err
 			}
-			if pubKey.GetType() != chainec.ECTypeSecp256k1 {
+			if pfcec.SignatureType(pubKey.GetType()) != pfcec.STEcdsaSecp256k1 {
 				return nil, rpcErrorf(pfcjson.ErrRPCInvalidParameter,
 					"only secp256k1 pubkeys are currently supported")
 			}
@@ -374,12 +382,11 @@ func addMultiSigAddress(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	chainClient, ok := s.requireChainClient()
+	n, ok := s.walletLoader.NetworkBackend()
 	if !ok {
-		return nil, errClientNotConnected
+		return nil, errNoNetwork
 	}
-
-	err = chainClient.LoadTxFilter(false, []pfcutil.Address{p2shAddr}, nil)
+	err = n.LoadTxFilter(context.TODO(), false, []pfcutil.Address{p2shAddr}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -761,23 +768,25 @@ func getBlockCount(s *Server, icmd interface{}) (interface{}, error) {
 	return height, nil
 }
 
-// getInfo handles a getinfo request by returning the a structure containing
-// information about the current state of pfcwallet.
-// exist.
+// difficultyRatio returns the proof-of-work difficulty as a multiple of the
+// minimum difficulty using the passed bits field from the header of a block.
+func difficultyRatio(bits uint32, params *chaincfg.Params) float64 {
+	max := blockchain.CompactToBig(params.PowLimitBits)
+	target := blockchain.CompactToBig(bits)
+	ratio, _ := new(big.Rat).SetFrac(max, target).Float64()
+	return ratio
+}
+
+// getInfo handles a getinfo request by returning a structure containing
+// information about the current state of the wallet.
 func getInfo(s *Server, icmd interface{}) (interface{}, error) {
 	w, ok := s.walletLoader.LoadedWallet()
 	if !ok {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
-	}
-
-	// Call down to pfcd for all of the information in this command known
-	// by them.
-	info, err := chainClient.GetInfo()
+	tipHash, tipHeight := w.MainChainTip()
+	tipHeader, err := w.BlockHeader(&tipHash)
 	if err != nil {
 		return nil, err
 	}
@@ -786,21 +795,44 @@ func getInfo(s *Server, icmd interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var bal pfcutil.Amount
+	var spendableBalance pfcutil.Amount
 	for _, balance := range balances {
-		bal += balance.Spendable
+		spendableBalance += balance.Spendable
 	}
 
-	info.WalletVersion = udb.DBVersion
-	info.Balance = bal.ToCoin()
-	info.KeypoolOldest = time.Now().Unix()
-	info.KeypoolSize = 0
-	info.PaytxFee = w.RelayFee().ToCoin()
-	// We don't set the following since they don't make much sense in the
-	// wallet architecture:
-	//  - unlocked_until
-	//  - errors
+	info := &pfcjson.InfoWalletResult{
+		Version:         ver.Integer,
+		ProtocolVersion: int32(p2p.Pver),
+		WalletVersion:   ver.Integer,
+		Balance:         spendableBalance.ToCoin(),
+		Blocks:          tipHeight,
+		TimeOffset:      0,
+		Connections:     0,
+		Proxy:           "",
+		Difficulty:      difficultyRatio(tipHeader.Bits, w.ChainParams()),
+		TestNet:         w.ChainParams().Net == wire.TestNet3,
+		KeypoolOldest:   0,
+		KeypoolSize:     0,
+		UnlockedUntil:   0,
+		PaytxFee:        w.RelayFee().ToCoin(),
+		RelayFee:        0,
+		Errors:          "",
+	}
+
+	n, _ := s.walletLoader.NetworkBackend()
+	if chainClient, err := chain.RPCClientFromBackend(n); err == nil {
+		consensusInfo, err := chainClient.GetInfo()
+		if err != nil {
+			return nil, err
+		}
+		info.Version = consensusInfo.Version
+		info.ProtocolVersion = consensusInfo.ProtocolVersion
+		info.TimeOffset = consensusInfo.TimeOffset
+		info.Connections = consensusInfo.Connections
+		info.Proxy = consensusInfo.Proxy
+		info.RelayFee = consensusInfo.RelayFee
+		info.Errors = consensusInfo.Errors
+	}
 
 	return info, nil
 }
@@ -936,9 +968,17 @@ func importPrivKey(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
+	rescan := true
+	if cmd.Rescan != nil {
+		rescan = *cmd.Rescan
+	}
+	scanFrom := int32(0)
+	if cmd.ScanFrom != nil {
+		scanFrom = int32(*cmd.ScanFrom)
+	}
+	n, ok := s.walletLoader.NetworkBackend()
+	if rescan && !ok {
+		return nil, errNoNetwork
 	}
 
 	// Ensure that private keys are only imported to the correct account.
@@ -956,16 +996,6 @@ func importPrivKey(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, rpcErrorf(pfcjson.ErrRPCInvalidAddressOrKey, "key is not intended for %s", w.ChainParams().Name)
 	}
 
-	rescan := true
-	if cmd.Rescan != nil {
-		rescan = *cmd.Rescan
-	}
-
-	scanFrom := int32(0)
-	if cmd.ScanFrom != nil {
-		scanFrom = int32(*cmd.ScanFrom)
-	}
-
 	// Import the private key, handling any errors.
 	_, err = w.ImportPrivateKey(wif)
 	if err != nil {
@@ -981,7 +1011,8 @@ func importPrivKey(s *Server, icmd interface{}) (interface{}, error) {
 	}
 
 	if rescan {
-		n := chain.BackendFromRPCClient(chainClient.Client)
+		// TODO: This is not synchronized with process shutdown and
+		// will cause panics when the DB is closed mid-transaction.
 		go w.RescanFromHeight(context.Background(), n, scanFrom)
 	}
 
@@ -996,9 +1027,17 @@ func importScript(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
+	rescan := true
+	if cmd.Rescan != nil {
+		rescan = *cmd.Rescan
+	}
+	scanFrom := int32(0)
+	if cmd.ScanFrom != nil {
+		scanFrom = int32(*cmd.ScanFrom)
+	}
+	n, ok := s.walletLoader.NetworkBackend()
+	if rescan && !ok {
+		return nil, errNoNetwork
 	}
 
 	rs, err := hex.DecodeString(cmd.Hex)
@@ -1007,16 +1046,6 @@ func importScript(s *Server, icmd interface{}) (interface{}, error) {
 	}
 	if len(rs) == 0 {
 		return nil, rpcErrorf(pfcjson.ErrRPCInvalidParameter, "empty script")
-	}
-
-	rescan := true
-	if cmd.Rescan != nil {
-		rescan = *cmd.Rescan
-	}
-
-	scanFrom := 0
-	if cmd.ScanFrom != nil {
-		scanFrom = *cmd.ScanFrom
 	}
 
 	err = w.ImportScript(rs)
@@ -1033,8 +1062,9 @@ func importScript(s *Server, icmd interface{}) (interface{}, error) {
 	}
 
 	if rescan {
-		n := chain.BackendFromRPCClient(chainClient.Client)
-		go w.RescanFromHeight(context.Background(), n, int32(scanFrom))
+		// TODO: This is not synchronized with process shutdown and
+		// will cause panics when the DB is closed mid-transaction.
+		go w.RescanFromHeight(context.Background(), n, scanFrom)
 	}
 
 	return nil, nil
@@ -1331,48 +1361,51 @@ func getStakeInfo(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
+	var chainClient *rpcclient.Client
+	if n, ok := s.walletLoader.NetworkBackend(); ok {
+		client, err := chain.RPCClientFromBackend(n)
+		if err == nil {
+			chainClient = client
+		}
 	}
-
-	// Asynchronously query for the stake difficulty.
-	sdiffFuture := chainClient.GetStakeDifficultyAsync()
-	stakeInfo, err := w.StakeInfo(chainClient.Client)
+	var sinfo *wallet.StakeInfoData
+	var err error
+	if chainClient != nil {
+		sinfo, err = w.StakeInfoPrecise(chainClient)
+	} else {
+		sinfo, err = w.StakeInfo()
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	proportionLive := float64(0.0)
-	if float64(stakeInfo.PoolSize) > 0.0 {
-		proportionLive = float64(stakeInfo.Live) / float64(stakeInfo.PoolSize)
+	var proportionLive, proportionMissed float64
+	if sinfo.PoolSize > 0 {
+		proportionLive = float64(sinfo.Live) / float64(sinfo.PoolSize)
 	}
-	proportionMissed := float64(0.0)
-	if stakeInfo.Missed > 0 {
-		proportionMissed = float64(stakeInfo.Missed) /
-			(float64(stakeInfo.Voted) + float64(stakeInfo.Missed))
-	}
-
-	sdiff, err := sdiffFuture.Receive()
-	if err != nil {
-		return nil, err
+	if sinfo.Missed > 0 {
+		proportionMissed = float64(sinfo.Missed) / (float64(sinfo.Voted + sinfo.Missed))
 	}
 
 	resp := &pfcjson.GetStakeInfoResult{
-		BlockHeight:      stakeInfo.BlockHeight,
-		PoolSize:         stakeInfo.PoolSize,
-		Difficulty:       sdiff.NextStakeDifficulty,
-		AllMempoolTix:    stakeInfo.AllMempoolTix,
-		OwnMempoolTix:    stakeInfo.OwnMempoolTix,
-		Immature:         stakeInfo.Immature,
-		Live:             stakeInfo.Live,
+		BlockHeight:  sinfo.BlockHeight,
+		Difficulty:   sinfo.Sdiff.ToCoin(),
+		TotalSubsidy: sinfo.TotalSubsidy.ToCoin(),
+
+		OwnMempoolTix:  sinfo.OwnMempoolTix,
+		Immature:       sinfo.Immature,
+		Unspent:        sinfo.Unspent,
+		Voted:          sinfo.Voted,
+		Revoked:        sinfo.Revoked,
+		UnspentExpired: sinfo.UnspentExpired,
+
+		PoolSize:         sinfo.PoolSize,
+		AllMempoolTix:    sinfo.AllMempoolTix,
+		Live:             sinfo.Live,
 		ProportionLive:   proportionLive,
-		Voted:            stakeInfo.Voted,
-		TotalSubsidy:     stakeInfo.TotalSubsidy.ToCoin(),
-		Missed:           stakeInfo.Missed,
+		Missed:           sinfo.Missed,
 		ProportionMissed: proportionMissed,
-		Revoked:          stakeInfo.Revoked,
-		Expired:          stakeInfo.Expired,
+		Expired:          sinfo.Expired,
 	}
 
 	return resp, nil
@@ -1397,12 +1430,13 @@ func getTickets(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
+	n, _ := s.walletLoader.NetworkBackend()
+	chainClient, err := chain.RPCClientFromBackend(n)
+	if err != nil {
+		return nil, errRPCClientNotConnected
 	}
 
-	ticketHashes, err := w.LiveTicketHashes(chainClient.Client, cmd.IncludeImmature)
+	ticketHashes, err := w.LiveTicketHashes(chainClient, cmd.IncludeImmature)
 	if err != nil {
 		return nil, err
 	}
@@ -1585,28 +1619,27 @@ var helpDescsMu sync.Mutex // Help may execute concurrently, so synchronize acce
 // HelpWithChainRPC handlers.
 func help(s *Server, icmd interface{}) (interface{}, error) {
 	cmd := icmd.(*pfcjson.HelpCmd)
-	// The "help" RPC must use an HTTP POST client when calling down to pfcd
-	// for additional help methods. This is required to avoid including
-	// websocket-only requests in the help, which are not callable by wallet
-	// JSON-RPC clients.  Any errors creating the POST client may be ignored
-	// since the client is not necessary for the request.
-	chainClient, _ := s.requireChainClient()
+	// TODO: The "help" RPC should use a HTTP POST client when calling down to
+	// pfcd for additional help methods.  This avoids including websocket-only
+	// requests in the help, which are not callable by wallet JSON-RPC clients.
+	var chainClient *rpcclient.Client
+	n, _ := s.walletLoader.NetworkBackend()
+	if c, err := chain.RPCClientFromBackend(n); err == nil {
+		chainClient = c
+	}
 	if cmd.Command == nil || *cmd.Command == "" {
 		// Prepend chain server usage if it is available.
 		usages := requestUsages
 		if chainClient != nil {
-			postClient, err := chainClient.POSTClient()
+			rawChainUsage, err := chainClient.RawRequest("help", nil)
+			var chainUsage string
 			if err == nil {
-				rawChainUsage, err := postClient.RawRequest("help", nil)
-				var chainUsage string
-				if err == nil {
-					_ = json.Unmarshal([]byte(rawChainUsage), &chainUsage)
-				}
-				if chainUsage != "" {
-					usages = "Chain server usage:\n\n" + chainUsage + "\n\n" +
-						"Wallet server usage (overrides chain requests):\n\n" +
-						requestUsages
-				}
+				_ = json.Unmarshal([]byte(rawChainUsage), &chainUsage)
+			}
+			if chainUsage != "" {
+				usages = "Chain server usage:\n\n" + chainUsage + "\n\n" +
+					"Wallet server usage (overrides chain requests):\n\n" +
+					requestUsages
 			}
 		}
 		return usages, nil
@@ -1634,12 +1667,9 @@ func help(s *Server, icmd interface{}) (interface{}, error) {
 		param[0] = '"'
 		copy(param[1:], *cmd.Command)
 		param[len(param)-1] = '"'
-		postClient, err := chainClient.POSTClient()
+		rawChainHelp, err := chainClient.RawRequest("help", []json.RawMessage{param})
 		if err == nil {
-			rawChainHelp, err := postClient.RawRequest("help", []json.RawMessage{param})
-			if err == nil {
-				_ = json.Unmarshal([]byte(rawChainHelp), &chainHelp)
-			}
+			_ = json.Unmarshal([]byte(rawChainHelp), &chainHelp)
 		}
 	}
 	if chainHelp != "" {
@@ -1832,46 +1862,35 @@ func listSinceBlock(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
+	tipHash, tipHeight := w.MainChainTip()
+	targetConf := int32(*cmd.TargetConfirmations)
+	if targetConf < 1 {
+		return nil, rpcErrorf(pfcjson.ErrRPCInvalidParameter, "target_confirmations must be positive")
 	}
 
-	_, tipHeight := w.MainChainTip()
-	targetConf := int64(*cmd.TargetConfirmations)
-
-	// For the result we need the block hash for the last block counted
-	// in the blockchain due to confirmations. We send this off now so that
-	// it can arrive asynchronously while we figure out the rest.
-	gbh := chainClient.GetBlockHashAsync(int64(tipHeight) + 1 - targetConf)
-
+	// TODO: This must begin at the fork point in the main chain, not the height
+	// of this block.
 	var start int32
 	if cmd.BlockHash != nil {
 		hash, err := chainhash.NewHashFromStr(*cmd.BlockHash)
 		if err != nil {
 			return nil, rpcError(pfcjson.ErrRPCDecodeHexString, err)
 		}
-		block, err := chainClient.GetBlockVerbose(hash, false)
+		header, err := w.BlockHeader(hash)
 		if err != nil {
 			return nil, err
 		}
-		start = int32(block.Height) + 1
+		start = int32(header.Height)
 	}
 
-	txInfoList, err := w.ListSinceBlock(start, -1, tipHeight)
+	txInfoList, err := w.ListSinceBlock(start, tipHeight+1-targetConf, tipHeight)
 	if err != nil {
 		return nil, err
 	}
 
-	// Done with work, get the response.
-	blockHash, err := gbh.Receive()
-	if err != nil {
-		return nil, err
-	}
-
-	res := pfcjson.ListSinceBlockResult{
+	res := &pfcjson.ListSinceBlockResult{
 		Transactions: txInfoList,
-		LastBlock:    blockHash.String(),
+		LastBlock:    tipHash.String(),
 	}
 	return res, nil
 }
@@ -1921,7 +1940,9 @@ func listTransactions(s *Server, icmd interface{}) (interface{}, error) {
 		// For now, don't bother trying to continue if the user
 		// specified an account, since this can't be (easily or
 		// efficiently) calculated.
-		return nil, errors.E("transactions can not be searched by account")
+		return nil,
+			errors.E(`Transactions can not be searched by account. ` +
+				`Use "*" to reference all accounts.`)
 	}
 
 	return w.ListTransactions(*cmd.From, *cmd.Count)
@@ -2244,7 +2265,8 @@ func redeemMultiSigOut(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errors.E("P2SH redeem script is not multisig")
 	}
 	var msgTx wire.MsgTx
-	msgTx.AddTxIn(wire.NewTxIn(&op, nil))
+	txIn := wire.NewTxIn(&op, int64(p2shOutput.OutputAmount), nil)
+	msgTx.AddTxIn(txIn)
 
 	pkScript, err := txscript.PayToAddrScript(addr)
 	if err != nil {
@@ -2363,30 +2385,36 @@ func rescanWallet(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
+	n, ok := s.walletLoader.NetworkBackend()
 	if !ok {
-		return nil, errClientNotConnected
+		return nil, errNoNetwork
 	}
 
-	n := chain.BackendFromRPCClient(chainClient.Client)
 	err := w.RescanFromHeight(context.TODO(), n, int32(*cmd.BeginHeight))
 	return nil, err
 }
 
-// revokeTickets initiates the wallet to issue revocations for any missing tickets that
-// not yet been revoked.
+// revokeTickets initiates the wallet to issue revocations for any missing
+// tickets that not yet been revoked.
 func revokeTickets(s *Server, icmd interface{}) (interface{}, error) {
 	w, ok := s.walletLoader.LoadedWallet()
 	if !ok {
 		return nil, errUnloadedWallet
 	}
 
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
+	// The wallet is not locally aware of when tickets are selected to vote and
+	// when they are missed.  RevokeTickets uses trusted RPCs to determine which
+	// tickets were missed.  RevokeExpiredTickets is only able to create
+	// revocations for tickets which have reached their expiry time even if they
+	// were missed prior to expiry, but is able to be used with other backends.
+	n, _ := s.walletLoader.NetworkBackend()
+	chainClient, err := chain.RPCClientFromBackend(n)
+	if err != nil {
+		err := w.RevokeExpiredTickets(context.TODO(), n)
+		return nil, err
 	}
 
-	err := w.RevokeTickets(chainClient.Client)
+	err = w.RevokeTickets(chainClient)
 	return nil, err
 }
 
@@ -2644,7 +2672,7 @@ func sendToMultiSig(s *Server, icmd interface{}) (interface{}, error) {
 				}
 				return nil, err
 			}
-			if pubKey.GetType() != chainec.ECTypeSecp256k1 {
+			if pfcec.SignatureType(pubKey.GetType()) != pfcec.STEcdsaSecp256k1 {
 				return nil, errors.New("only secp256k1 " +
 					"pubkeys are currently supported")
 			}
@@ -2660,23 +2688,13 @@ func sendToMultiSig(s *Server, icmd interface{}) (interface{}, error) {
 	ctx, addr, script, err :=
 		w.CreateMultisigTx(account, amount, pubkeys, nrequired, minconf)
 	if err != nil {
-		return nil, errors.Errorf("CreateMultisigTx error: %v", err.Error())
+		return nil, err
 	}
 
 	result := &pfcjson.SendToMultiSigResult{
 		TxHash:       ctx.MsgTx.TxHash().String(),
 		Address:      addr.EncodeAddress(),
 		RedeemScript: hex.EncodeToString(script),
-	}
-
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
-	}
-
-	err = chainClient.LoadTxFilter(false, []pfcutil.Address{addr}, nil)
-	if err != nil {
-		return nil, err
 	}
 
 	log.Infof("Successfully sent funds to multisignature output in "+
@@ -2871,28 +2889,28 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 	// querying pfcd with getrawtransaction. We queue up a bunch of async
 	// requests and will wait for replies after we have checked the rest of
 	// the arguments.
-	requested := make(map[wire.OutPoint]pfcrpcclient.FutureGetTxOutResult)
-	for i, txIn := range tx.TxIn {
-		// We don't need the first input of a stakebase tx, as it's garbage
-		// anyway.
-		if i == 0 && *cmd.Flags == "ssgen" {
-			continue
-		}
+	var requested map[wire.OutPoint]rpcclient.FutureGetTxOutResult
+	n, _ := s.walletLoader.NetworkBackend()
+	chainClient, err := chain.RPCClientFromBackend(n)
+	if err == nil {
+		requested = make(map[wire.OutPoint]rpcclient.FutureGetTxOutResult)
+		for i, txIn := range tx.TxIn {
+			// We don't need the first input of a stakebase tx, as it's garbage
+			// anyway.
+			if i == 0 && *cmd.Flags == "ssgen" {
+				continue
+			}
 
-		// Did we get this outpoint from the arguments?
-		if _, ok := inputs[txIn.PreviousOutPoint]; ok {
-			continue
-		}
+			// Did we get this outpoint from the arguments?
+			if _, ok := inputs[txIn.PreviousOutPoint]; ok {
+				continue
+			}
 
-		chainClient, ok := s.requireChainClient()
-		if !ok {
-			return nil, errClientNotConnected
+			// Asynchronously request the output script.
+			requested[txIn.PreviousOutPoint] = chainClient.GetTxOutAsync(
+				&txIn.PreviousOutPoint.Hash, txIn.PreviousOutPoint.Index,
+				true)
 		}
-
-		// Asynchronously request the output script.
-		requested[txIn.PreviousOutPoint] = chainClient.GetTxOutAsync(
-			&txIn.PreviousOutPoint.Hash, txIn.PreviousOutPoint.Index,
-			true)
 	}
 
 	// Parse list of private keys, if present. If there are any keys here
@@ -2914,20 +2932,20 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 
 			var addr pfcutil.Address
 			switch wif.DSA() {
-			case chainec.ECTypeSecp256k1:
+			case pfcec.STEcdsaSecp256k1:
 				addr, err = pfcutil.NewAddressSecpPubKey(wif.SerializePubKey(),
 					w.ChainParams())
 				if err != nil {
 					return nil, err
 				}
-			case chainec.ECTypeEdwards:
+			case pfcec.STEd25519:
 				addr, err = pfcutil.NewAddressEdwardsPubKey(
 					wif.SerializePubKey(),
 					w.ChainParams())
 				if err != nil {
 					return nil, err
 				}
-			case chainec.ECTypeSecSchnorr:
+			case pfcec.STSchnorrSecp256k1:
 				addr, err = pfcutil.NewAddressSecSchnorrPubKey(
 					wif.SerializePubKey(),
 					w.ChainParams())
@@ -2945,7 +2963,12 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 	for outPoint, resp := range requested {
 		result, err := resp.Receive()
 		if err != nil {
-			return nil, err
+			return nil, errors.E(errors.Op("pfcd.jsonrpc.gettxout"), err)
+		}
+		// gettxout returns JSON null if the output is found, but is spent by
+		// another transaction in the main chain.
+		if result == nil {
+			continue
 		}
 		script, err := hex.DecodeString(result.ScriptPubKey.Hex)
 		if err != nil {
@@ -2993,15 +3016,6 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 // signRawTransactions handles the signrawtransactions command.
 func signRawTransactions(s *Server, icmd interface{}) (interface{}, error) {
 	cmd := icmd.(*pfcjson.SignRawTransactionsCmd)
-	w, ok := s.walletLoader.LoadedWallet()
-	if !ok {
-		return nil, errUnloadedWallet
-	}
-
-	chainClient, ok := s.requireChainClient()
-	if !ok {
-		return nil, errClientNotConnected
-	}
 
 	// Sign each transaction sequentially and record the results.
 	// Error out if we meet some unexpected failure.
@@ -3026,6 +3040,11 @@ func signRawTransactions(s *Server, icmd interface{}) (interface{}, error) {
 	toReturn := make([]pfcjson.SignedTransaction, len(cmd.RawTxs))
 
 	if *cmd.Send {
+		n, ok := s.walletLoader.NetworkBackend()
+		if !ok {
+			return nil, errNoNetwork
+		}
+
 		for i, result := range results {
 			if result.Complete {
 				// Slow/mem hungry because of the deserializing.
@@ -3041,12 +3060,12 @@ func signRawTransactions(s *Server, icmd interface{}) (interface{}, error) {
 				}
 				sent := false
 				hashStr := ""
-				hash, err := chainClient.SendRawTransaction(msgTx, w.AllowHighFees)
+				err = n.PublishTransactions(context.TODO(), msgTx)
 				// If sendrawtransaction errors out (blockchain rule
 				// issue, etc), continue onto the next transaction.
 				if err == nil {
 					sent = true
-					hashStr = hash.String()
+					hashStr = msgTx.TxHash().String()
 				}
 
 				st := pfcjson.SignedTransaction{
@@ -3187,21 +3206,38 @@ func stopAutoBuyer(s *Server, icmd interface{}) (interface{}, error) {
 	return nil, err
 }
 
-// makeChangeSourceFromAddress creates a ChangeSource which is used to
+// scriptChangeSource is a ChangeSource which is used to
 // receive all correlated previous input value.
-func makeChangeSourceFromAddress(address string) txauthor.ChangeSource {
-	return func() ([]byte, uint16, error) {
-		destinationAddress, err := pfcutil.DecodeAddress(address)
-		if err != nil {
-			return nil, 0, err
-		}
-		script, err := txscript.PayToAddrScript(destinationAddress)
-		if err != nil {
-			return nil, 0, err
-		}
+type scriptChangeSource struct {
+	version uint16
+	script  []byte
+}
 
-		return script, txscript.DefaultScriptVersion, err
+func (src *scriptChangeSource) Script() ([]byte, uint16, error) {
+	return src.script, src.version, nil
+}
+
+func (src *scriptChangeSource) ScriptSize() int {
+	return len(src.script)
+}
+
+func makeScriptChangeSource(address string, version uint16) (*scriptChangeSource, error) {
+	destinationAddress, err := pfcutil.DecodeAddress(address)
+	if err != nil {
+		return nil, err
 	}
+
+	script, err := txscript.PayToAddrScript(destinationAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	source := &scriptChangeSource{
+		version: version,
+		script:  script,
+	}
+
+	return source, nil
 }
 
 // sweepAccount handles the sweepaccount command.
@@ -3239,7 +3275,11 @@ func sweepAccount(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	changeSource := makeChangeSourceFromAddress(cmd.DestinationAddress)
+	changeSource, err := makeScriptChangeSource(cmd.DestinationAddress,
+		txscript.DefaultScriptVersion)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := w.NewUnsignedTransaction(nil, feePerKb, account,
 		requiredConfs, wallet.OutputSelectionAlgorithmAll, changeSource)
 	if err != nil {
@@ -3386,7 +3426,7 @@ func verifyMessage(s *Server, icmd interface{}) (interface{}, error) {
 	switch a := addr.(type) {
 	case *pfcutil.AddressSecpPubKey:
 	case *pfcutil.AddressPubKeyHash:
-		if a.DSA(a.Net()) != chainec.ECTypeSecp256k1 {
+		if a.DSA(a.Net()) != pfcec.STEcdsaSecp256k1 {
 			goto WrongAddrKind
 		}
 	default:
@@ -3408,8 +3448,9 @@ WrongAddrKind:
 // function for the versionWithChainRPC and versionNoChainRPC handlers.
 func version(s *Server, icmd interface{}) (interface{}, error) {
 	var resp map[string]pfcjson.VersionResult
-	chainClient, ok := s.requireChainClient()
-	if ok {
+	n, _ := s.walletLoader.NetworkBackend()
+	chainClient, err := chain.RPCClientFromBackend(n)
+	if err == nil {
 		var err error
 		resp, err = chainClient.Version()
 		if err != nil {
@@ -3441,7 +3482,7 @@ func walletInfo(s *Server, icmd interface{}) (interface{}, error) {
 	connected := err == nil
 	if connected {
 		chainClient, err := chain.RPCClientFromBackend(n)
-		if err != nil {
+		if err == nil {
 			err := chainClient.Ping()
 			if err != nil {
 				log.Warnf("Ping failed on connected daemon client: %v", err)

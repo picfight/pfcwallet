@@ -61,7 +61,12 @@ var (
 		Message: "request requires a wallet but wallet has not loaded yet",
 	}
 
-	errClientNotConnected = &pfcjson.RPCError{
+	errRPCClientNotConnected = &pfcjson.RPCError{
+		Code:    pfcjson.ErrRPCClientNotConnected,
+		Message: "disconnected from consensus RPC",
+	}
+
+	errNoNetwork = &pfcjson.RPCError{
 		Code:    pfcjson.ErrRPCClientNotConnected,
 		Message: "disconnected from network",
 	}
