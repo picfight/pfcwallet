@@ -10,19 +10,16 @@ import (
 	h "github.com/picfight/pfcwallet/internal/helpers"
 )
 
-// ScriptSizer signature script sizing interface
-type ScriptSizer interface {
-	ScriptSize() int
-}
-
-type sigScriptSize int
-
-func (s sigScriptSize) ScriptSize() int { return int(s) }
-
-// TODO: add multi sig sizer type
-
 // Worst case script and input/output size estimates.
 const (
+	// RedeemP2PKSigScriptSize is the worst case (largest) serialize size
+	// of a transaction input script that redeems a compressed P2PK output.
+	// It is calculated as:
+	//
+	//   - OP_DATA_73
+	//   - 72 bytes DER signature + 1 byte sighash
+	RedeemP2PKSigScriptSize = 1 + 73
+
 	// RedeemP2PKHSigScriptSize is the worst case (largest) serialize size
 	// of a transaction input script that redeems a compressed P2PKH output.
 	// It is calculated as:
@@ -79,28 +76,25 @@ const (
 	//   - 1 byte compact int encoding value 25
 	//   - 25 bytes P2PKH output script
 	P2PKHOutputSize = 8 + 2 + 1 + 25
-
-	// signature script definitions
-	P2SHScriptSize  = sigScriptSize(RedeemP2SHSigScriptSize)
-	P2PKHScriptSize = sigScriptSize(RedeemP2PKHSigScriptSize)
 )
 
 // EstimateSerializeSize returns a worst case serialize size estimate for a
 // signed transaction that spends a number of outputs and contains each
-// transaction output from txOuts.  The estimated size is incremented for an
-// additional P2PKH change output if addChangeOutput is true.
-func EstimateSerializeSize(scriptSizers []ScriptSizer, txOuts []*wire.TxOut, addChangeOutput bool) int {
+// transaction output from txOuts. The estimated size is incremented for an
+// additional change output if changeScriptSize is greater than 0. Passing 0
+// does not add a change output.
+func EstimateSerializeSize(scriptSizes []int, txOuts []*wire.TxOut, changeScriptSize int) int {
 	// generate the estimated sizes of the inputs
 	txInsSize := 0
-	for _, sizer := range scriptSizers {
-		txInsSize += EstimateInputSize(sizer.ScriptSize())
+	for _, size := range scriptSizes {
+		txInsSize += EstimateInputSize(size)
 	}
 
-	inputCount := len(scriptSizers)
+	inputCount := len(scriptSizes)
 	outputCount := len(txOuts)
 	changeSize := 0
-	if addChangeOutput {
-		changeSize = P2PKHOutputSize
+	if changeScriptSize > 0 {
+		changeSize = EstimateOutputSize(changeScriptSize)
 		outputCount++
 	}
 
@@ -124,4 +118,13 @@ func EstimateSerializeSize(scriptSizers []ScriptSizer, txOuts []*wire.TxOut, add
 //   - 4 bytes sequence
 func EstimateInputSize(scriptSize int) int {
 	return 32 + 4 + 1 + 8 + 4 + 4 + wire.VarIntSerializeSize(uint64(scriptSize)) + scriptSize + 4
+}
+
+// EstimateOutputSize returns the worst case serialize size estimate for a tx output
+//   - 8 bytes amount
+//   - 2 bytes version
+//   - the compact int representation of the script size
+//   - the supplied script size
+func EstimateOutputSize(scriptSize int) int {
+	return 8 + 2 + wire.VarIntSerializeSize(uint64(scriptSize)) + scriptSize
 }

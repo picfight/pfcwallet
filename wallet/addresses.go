@@ -12,13 +12,17 @@ import (
 	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/txauthor"
+	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/walletdb"
 )
 
 // DefaultGapLimit is the default unused address gap limit defined by BIP0044.
 const DefaultGapLimit = 20
+
+// DefaultAccountGapLimit is the default number of accounts that can be
+// created in a row without using any of them
+const DefaultAccountGapLimit = 10
 
 // gapPolicy defines the policy to use when the BIP0044 address gap limit is
 // exceeded.
@@ -545,18 +549,26 @@ func (w *Wallet) AccountBranchAddressRange(account, branch, start, end uint32) (
 	return addrs, nil
 }
 
-func (w *Wallet) changeSource(op errors.Op, persist persistReturnedChildFunc, account uint32) txauthor.ChangeSource {
-	return func() ([]byte, uint16, error) {
-		changeAddress, err := w.newChangeAddress(op, persist, account)
-		if err != nil {
-			return nil, 0, err
-		}
-		script, err := txscript.PayToAddrScript(changeAddress)
-		if err != nil {
-			return nil, 0, errors.E(op, err)
-		}
-		return script, txscript.DefaultScriptVersion, nil
+type p2PKHChangeSource struct {
+	persist persistReturnedChildFunc
+	account uint32
+	wallet  *Wallet
+}
+
+func (src *p2PKHChangeSource) Script() ([]byte, uint16, error) {
+	changeAddress, err := src.wallet.newChangeAddress("", src.persist, src.account)
+	if err != nil {
+		return nil, 0, err
 	}
+	script, err := txscript.PayToAddrScript(changeAddress)
+	if err != nil {
+		return nil, 0, err
+	}
+	return script, txscript.DefaultScriptVersion, nil
+}
+
+func (src *p2PKHChangeSource) ScriptSize() int {
+	return txsizes.P2PKHPkScriptSize
 }
 
 func deriveChildAddresses(key *hdkeychain.ExtendedKey, startIndex, count uint32, params *chaincfg.Params) ([]pfcutil.Address, error) {

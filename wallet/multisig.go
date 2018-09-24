@@ -5,15 +5,15 @@
 package wallet
 
 import (
-	"github.com/picfight/pfcd/chaincfg/chainec"
+	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/walletdb"
 )
 
 // MakeSecp256k1MultiSigScript creates a multi-signature script that can be
@@ -48,7 +48,7 @@ func (w *Wallet) MakeSecp256k1MultiSigScript(secp256k1Addrs []pfcutil.Address, n
 			secp256k1PubKeys[i] = addr
 
 		case *pfcutil.AddressPubKeyHash:
-			if addr.DSA(w.chainParams) != chainec.ECTypeSecp256k1 {
+			if addr.DSA(w.chainParams) != pfcec.STEcdsaSecp256k1 {
 				return nil, errors.E(op, errors.Invalid, "address key is not secp256k1")
 			}
 
@@ -197,15 +197,15 @@ func (w *Wallet) FetchAllRedeemScripts() ([][]byte, error) {
 func (w *Wallet) PrepareRedeemMultiSigOutTxOutput(msgTx *wire.MsgTx, p2shOutput *P2SHMultiSigOutput, pkScript *[]byte) error {
 	const op errors.Op = "wallet.PrepareRedeemMultiSigOutTxOutput"
 
-	scriptSizers := []txsizes.ScriptSizer{}
-	// generate the script sizers for the inputs
+	scriptSizes := []int{}
+	// generate the script sizes for the inputs
 	for range msgTx.TxIn {
-		scriptSizers = append(scriptSizers, txsizes.P2SHScriptSize)
+		scriptSizes = append(scriptSizes, txsizes.RedeemP2SHSigScriptSize)
 	}
 
 	// estimate the output fee
 	txOut := wire.NewTxOut(0, *pkScript)
-	feeSize := txsizes.EstimateSerializeSize(scriptSizers, []*wire.TxOut{txOut}, false)
+	feeSize := txsizes.EstimateSerializeSize(scriptSizes, []*wire.TxOut{txOut}, 0)
 	feeEst := txrules.FeeForSerializeSize(w.RelayFee(), feeSize)
 	if feeEst >= p2shOutput.OutputAmount {
 		return errors.E(op, errors.Errorf("estimated fee %v is above output value %v",
