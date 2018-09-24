@@ -93,7 +93,7 @@ func init() {
 	}
 	var activeNet = &netparams.MainNetParams
 	if opts.TestNet {
-		activeNet = &netparams.TestNet2Params
+		activeNet = &netparams.TestNet3Params
 	} else if opts.SimNet {
 		activeNet = &netparams.SimNetParams
 	}
@@ -157,9 +157,10 @@ func (noInputValue) Error() string { return "no input value" }
 // looked up again by the wallet during the call to signrawtransaction.
 func makeInputSource(outputs []pfcjson.ListUnspentResult) txauthor.InputSource {
 	var (
-		totalInputValue pfcutil.Amount
-		inputs          = make([]*wire.TxIn, 0, len(outputs))
-		sourceErr       error
+		totalInputValue   pfcutil.Amount
+		inputs            = make([]*wire.TxIn, 0, len(outputs))
+		redeemScriptSizes = make([]int, 0, len(outputs))
+		sourceErr         error
 	)
 	for _, output := range outputs {
 		outputAmount, err := pfcutil.NewAmount(output.Amount)
@@ -183,48 +184,73 @@ func makeInputSource(outputs []pfcjson.ListUnspentResult) txauthor.InputSource {
 		previousOutPoint, err := parseOutPoint(&output)
 		if err != nil {
 			sourceErr = fmt.Errorf(
-				"invalid data in listunspent result: %v",
-				err)
+				"invalid data in listunspent result: %v", err)
 			break
 		}
 
-		inputs = append(inputs, wire.NewTxIn(&previousOutPoint, nil))
+		txIn := wire.NewTxIn(&previousOutPoint, int64(outputAmount), nil)
+		inputs = append(inputs, txIn)
 	}
 
 	if sourceErr == nil && totalInputValue == 0 {
 		sourceErr = noInputValue{}
 	}
 
-	return func(pfcutil.Amount) (pfcutil.Amount, []*wire.TxIn, [][]byte, error) {
-		return totalInputValue, inputs, nil, sourceErr
-	}
-}
-
-// makeDestinationScriptSourceToAccount creates a ChangeSource which is used to
-// receive all correlated previous input value.  A non-change address is created
-// by this function.
-func makeDestinationScriptSourceToAccount(rpcClient *pfcrpcclient.Client, accountName string) txauthor.ChangeSource {
-	return func() ([]byte, uint16, error) {
-		destinationAddress, err := rpcClient.GetNewAddress(accountName)
-		if err != nil {
-			return nil, 0, err
+	return func(pfcutil.Amount) (*txauthor.InputDetail, error) {
+		inputDetail := txauthor.InputDetail{
+			Amount:            totalInputValue,
+			Inputs:            inputs,
+			Scripts:           nil,
+			RedeemScriptSizes: redeemScriptSizes,
 		}
-		script, err := txscript.PayToAddrScript(destinationAddress)
-		return script, txscript.DefaultScriptVersion, err
+		return &inputDetail, sourceErr
 	}
 }
 
-// makeDestinationScriptSourceToAddress creates a ChangeSource which is used to
+// destinationScriptSourceToAccount is a ChangeSource which is used to receive
+// all correlated previous input value.
+type destinationScriptSourceToAccount struct {
+	accountName string
+	rpcClient   *pfcrpcclient.Client
+}
+
+// Source creates a non-change address.
+func (src *destinationScriptSourceToAccount) Script() ([]byte, uint16, error) {
+	destinationAddress, err := src.rpcClient.GetNewAddress(src.accountName)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	script, err := txscript.PayToAddrScript(destinationAddress)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return script, txscript.DefaultScriptVersion, nil
+}
+
+func (src *destinationScriptSourceToAccount) ScriptSize() int {
+	return 25 // P2PKHPkScriptSize
+}
+
+// destinationScriptSourceToAddress s a ChangeSource which is used to
 // receive all correlated previous input value.
-func makeDestinationScriptSourceToAddress(rpcClient *pfcrpcclient.Client, address string) txauthor.ChangeSource {
-	return func() ([]byte, uint16, error) {
-		destinationAddress, err := pfcutil.DecodeAddress(address)
-		if err != nil {
-			return nil, 0, err
-		}
-		script, err := txscript.PayToAddrScript(destinationAddress)
-		return script, txscript.DefaultScriptVersion, err
+type destinationScriptSourceToAddress struct {
+	address string
+}
+
+// Source creates a non-change address.
+func (src *destinationScriptSourceToAddress) Script() ([]byte, uint16, error) {
+	destinationAddress, err := pfcutil.DecodeAddress(src.address)
+	if err != nil {
+		return nil, 0, err
 	}
+	script, err := txscript.PayToAddrScript(destinationAddress)
+	return script, txscript.DefaultScriptVersion, err
+}
+
+func (src *destinationScriptSourceToAddress) ScriptSize() int {
+	return 25 // P2PKHPkScriptSize
 }
 
 func main() {
@@ -313,18 +339,28 @@ func sweep() error {
 	for _, previousOutputs := range sourceOutputs {
 		inputSource := makeInputSource(previousOutputs)
 
-		var destinationSource txauthor.ChangeSource
+		var destinationSourceToAccount *destinationScriptSourceToAccount
+		var destinationSourceToAddress *destinationScriptSourceToAddress
+		var atx *txauthor.AuthoredTx
+		var err error
 
 		if opts.DestinationAccount != "" {
-			destinationSource = makeDestinationScriptSourceToAccount(rpcClient, opts.DestinationAccount)
+			destinationSourceToAccount = &destinationScriptSourceToAccount{
+				accountName: opts.DestinationAccount,
+				rpcClient:   rpcClient,
+			}
+			atx, err = txauthor.NewUnsignedTransaction(nil, opts.FeeRate.Amount,
+				inputSource, destinationSourceToAccount)
 		}
 
 		if opts.DestinationAddress != "" {
-			destinationSource = makeDestinationScriptSourceToAddress(rpcClient, opts.DestinationAddress)
+			destinationSourceToAddress = &destinationScriptSourceToAddress{
+				address: opts.DestinationAddress,
+			}
+			atx, err = txauthor.NewUnsignedTransaction(nil, opts.FeeRate.Amount,
+				inputSource, destinationSourceToAddress)
 		}
 
-		tx, err := txauthor.NewUnsignedTransaction(nil, opts.FeeRate.Amount,
-			inputSource, destinationSource)
 		if err != nil {
 			if err != (noInputValue{}) {
 				reportError("Failed to create unsigned transaction: %v", err)
@@ -338,7 +374,7 @@ func sweep() error {
 			reportError("Failed to unlock wallet: %v", err)
 			continue
 		}
-		signedTransaction, complete, err := rpcClient.SignRawTransaction(tx.Tx)
+		signedTransaction, complete, err := rpcClient.SignRawTransaction(atx.Tx)
 		_ = rpcClient.WalletLock()
 		if err != nil {
 			reportError("Failed to sign transaction: %v", err)
@@ -363,7 +399,7 @@ func sweep() error {
 			txHash = hash.String()
 		}
 
-		outputAmount := pfcutil.Amount(tx.Tx.TxOut[0].Value)
+		outputAmount := pfcutil.Amount(atx.Tx.TxOut[0].Value)
 		fmt.Printf("Swept %v to destination with transaction %v\n",
 			outputAmount, txHash)
 		totalSwept += outputAmount
