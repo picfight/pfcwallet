@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/chaincfg/chainec"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 // sstxRecord is the structure for a stored SStx.
@@ -199,7 +199,7 @@ func (s *StakeStore) sstxAddress(ns walletdb.ReadBucket, hash *chainhash.Hash) (
 	if p2sh {
 		addr, err = pfcutil.NewAddressScriptHashFromHash(thisHash160, s.Params)
 	} else {
-		addr, err = pfcutil.NewAddressPubKeyHash(thisHash160, s.Params, chainec.ECTypeSecp256k1)
+		addr, err = pfcutil.NewAddressPubKeyHash(thisHash160, s.Params, pfcec.STEcdsaSecp256k1)
 	}
 	if err != nil {
 		return nil, err

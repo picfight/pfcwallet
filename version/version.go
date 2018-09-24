@@ -18,9 +18,12 @@ const semverAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 // Constants defining the application version number.
 const (
 	Major = 1
-	Minor = 2
+	Minor = 3
 	Patch = 0
 )
+
+// Integer is an integer encoding of the major.minor.patch version.
+const Integer = 1000000*Major + 10000*Minor + 100*Patch
 
 // PreRelease contains the prerelease name of the application.  It is a variable
 // so it can be modified at link time (e.g.

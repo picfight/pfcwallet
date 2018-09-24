@@ -8,8 +8,9 @@ import (
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/walletdb"
 )
 
 // OutputSelectionPolicy describes the rules for selecting an output from the
@@ -99,11 +100,8 @@ func (w *Wallet) UnspentOutputs(policy OutputSelectionPolicy) ([]*TransactionOut
 }
 
 // SelectInputs selects transaction inputs to redeem unspent outputs stored in
-// the wallet.  It returns the total input amount referenced by the previous
-// transaction outputs, a slice of transaction inputs referencing these outputs,
-// and a slice of previous output scripts from each previous output referenced
-// by the corresponding input.
-func (w *Wallet) SelectInputs(targetAmount pfcutil.Amount, policy OutputSelectionPolicy) (total pfcutil.Amount, inputs []*wire.TxIn, prevScripts [][]byte, err error) {
+// the wallet.  It returns an input detail summary.
+func (w *Wallet) SelectInputs(targetAmount pfcutil.Amount, policy OutputSelectionPolicy) (inputDetail *txauthor.InputDetail, err error) {
 	const op errors.Op = "wallet.SelectInputs"
 	err = walletdb.View(w.db, func(tx walletdb.ReadTx) error {
 		addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
@@ -123,13 +121,13 @@ func (w *Wallet) SelectInputs(targetAmount pfcutil.Amount, policy OutputSelectio
 		sourceImpl := w.TxStore.MakeInputSource(txmgrNs, addrmgrNs, policy.Account,
 			policy.RequiredConfirmations, tipHeight)
 		var err error
-		total, inputs, prevScripts, err = sourceImpl.SelectInputs(targetAmount)
+		inputDetail, err = sourceImpl.SelectInputs(targetAmount)
 		return err
 	})
 	if err != nil {
 		err = errors.E(op, err)
 	}
-	return
+	return inputDetail, err
 }
 
 // OutputInfo describes additional info about an output which can be queried

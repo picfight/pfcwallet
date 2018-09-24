@@ -11,7 +11,7 @@ import (
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 func TestCoinTypes(t *testing.T) {
@@ -22,7 +22,7 @@ func TestCoinTypes(t *testing.T) {
 		legacyCoinType, slip0044CoinType uint32
 	}{
 		{&chaincfg.MainNetParams, 20, 42},
-		{&chaincfg.TestNet2Params, 11, 1},
+		{&chaincfg.TestNet3Params, 11, 1},
 		{&chaincfg.SimNetParams, 115, 1},
 	}
 	for _, test := range tests {
@@ -60,7 +60,7 @@ func TestCoinTypeUpgrade(t *testing.T) {
 	db, teardown := tempDB(t)
 	defer teardown()
 
-	params := &chaincfg.TestNet2Params
+	params := &chaincfg.TestNet3Params
 
 	err := Initialize(db, params, seed, pubPass, privPassphrase)
 	if err != nil {

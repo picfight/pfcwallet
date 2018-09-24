@@ -14,8 +14,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/picfight/pfcwallet/walletdb"
-	_ "github.com/picfight/pfcwallet/walletdb/bdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	_ "github.com/picfight/pfcwallet/wallet/internal/walletdb/bdb"
 )
 
 // dbType is the database type name for this driver.

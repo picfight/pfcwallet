@@ -14,7 +14,7 @@ package udb
 
 import (
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/snacl"
+	"github.com/picfight/pfcwallet/wallet/internal/snacl"
 )
 
 // TstLatestMgrVersion makes the unexported latestMgrVersion variable available

@@ -11,7 +11,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 // convertErr wraps a driver-specific error with an error code.

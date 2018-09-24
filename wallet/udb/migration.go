@@ -7,7 +7,7 @@ package udb
 import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 // Old package namespace bucket keys.  These are still used as of the very first

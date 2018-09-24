@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 
 	"github.com/picfight/pfcd/chaincfg/chainec"
+	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
 )
@@ -171,7 +172,7 @@ func newManagedAddressWithoutPrivKey(m *Manager, account uint32, pubKey chainec.
 		pubKeyHash = pfcutil.Hash160(pubKey.SerializeUncompressed())
 	}
 	address, err := pfcutil.NewAddressPubKeyHash(pubKeyHash, m.chainParams,
-		chainec.ECTypeSecp256k1)
+		pfcec.STEcdsaSecp256k1)
 	if err != nil {
 		return nil, err
 	}

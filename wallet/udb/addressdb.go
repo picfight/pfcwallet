@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 var (
@@ -520,7 +520,7 @@ func deserializeBIP0044AccountRow(accountID []byte, row *dbAccountRow, dbVersion
 	switch {
 	case dbVersion < 5 && len(row.rawData) < 20,
 		dbVersion >= 5 && len(row.rawData) < 28:
-		return nil, errors.E(errors.IO, errors.Errorf("bip0044 account %x bad len %d", len(row.rawData)))
+		return nil, errors.E(errors.IO, errors.Errorf("bip0044 account %x bad len %d", accountID, len(row.rawData)))
 	}
 
 	retRow := dbBIP0044AccountRow{
@@ -627,7 +627,7 @@ func bip0044AccountInfo(pubKeyEnc, privKeyEnc []byte, nextExtIndex, nextIntIndex
 		lastUsedInternalIndex:     0,
 		lastReturnedExternalIndex: 0,
 		lastReturnedInternalIndex: 0,
-		name: name,
+		name:                      name,
 	}
 	switch {
 	case dbVersion == 1:

@@ -30,10 +30,10 @@ import (
 	"github.com/picfight/pfcutil"
 	"github.com/picfight/pfcutil/hdkeychain"
 	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	_ "github.com/picfight/pfcwallet/wallet/internal/walletdb/bdb"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/walletdb"
-	_ "github.com/picfight/pfcwallet/walletdb/bdb"
 	"github.com/picfight/pfcwallet/walletseed"
 )
 
@@ -264,8 +264,9 @@ func createUnsignedTicketPurchase(prevOut *wire.OutPoint,
 	inputAmount, ticketPrice pfcutil.Amount) (*wire.MsgTx, error) {
 
 	tx := wire.NewMsgTx()
-
-	tx.AddTxIn(wire.NewTxIn(prevOut, nil))
+	txIn := wire.NewTxIn(prevOut, nil)
+	txIn.ValueIn = inputAmount
+	tx.AddTxIn(txIn)
 
 	pkScript, err := txscript.PayToSStx(addr)
 	if err != nil {
@@ -339,7 +340,9 @@ func createUnsignedVote(ticketHash *chainhash.Hash, ticketPurchase *wire.MsgTx,
 
 	// Votes reference the ticket purchase with the second input.
 	ticketOutPoint := wire.NewOutPoint(ticketHash, 0, wire.TxTreeStake)
-	vote.AddTxIn(wire.NewTxIn(ticketOutPoint, nil))
+	ticketInput := wire.NewTxIn(ticketOutPoint, nil)
+	ticketInput.ValueIn = ticketPurchase.TxOut[ticketOutPoint.Index].Value
+	vote.AddTxIn(ticketInput)
 
 	// The first output references the previous block the vote is voting on.
 	// This function never errors.
@@ -390,7 +393,9 @@ func createUnsignedRevocation(ticketHash *chainhash.Hash, ticketPurchase *wire.M
 	// Revocations reference the ticket purchase with the first (and only)
 	// input.
 	ticketOutPoint := wire.NewOutPoint(ticketHash, 0, wire.TxTreeStake)
-	revocation.AddTxIn(wire.NewTxIn(ticketOutPoint, nil))
+	ticketInput := wire.NewTxIn(ticketOutPoint, nil)
+	ticketInput.ValueIn = ticketPurchase.TxOut[ticketOutPoint.Index].Value
+	revocation.AddTxIn(ticketInput)
 
 	// All remaining outputs pay to the output destinations and amounts tagged
 	// by the ticket purchase.

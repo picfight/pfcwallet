@@ -7,7 +7,7 @@ package udb
 import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 // Initialize prepares an empty database for usage by initializing all buckets
@@ -53,7 +53,7 @@ func Initialize(db walletdb.DB, params *chaincfg.Params, seed, pubPass, privPass
 	if err != nil {
 		return err
 	}
-	return Upgrade(db, pubPass)
+	return Upgrade(db, pubPass, params)
 }
 
 // InitializeWatchOnly prepares an empty database for watching-only wallet usage
@@ -99,5 +99,5 @@ func InitializeWatchOnly(db walletdb.DB, params *chaincfg.Params, hdPubKey strin
 	if err != nil {
 		return err
 	}
-	return Upgrade(db, pubPass)
+	return Upgrade(db, pubPass, params)
 }

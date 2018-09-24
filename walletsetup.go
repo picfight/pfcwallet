@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2015 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -21,8 +21,7 @@ import (
 	"github.com/picfight/pfcwallet/internal/prompt"
 	"github.com/picfight/pfcwallet/loader"
 	"github.com/picfight/pfcwallet/wallet"
-	"github.com/picfight/pfcwallet/walletdb"
-	_ "github.com/picfight/pfcwallet/walletdb/bdb"
+	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
 	"github.com/picfight/pfcwallet/walletseed"
 )
 
@@ -54,11 +53,11 @@ func createWallet(ctx context.Context, cfg *config) error {
 	stakeOptions := &loader.StakeOptions{
 		VotingEnabled: cfg.EnableVoting,
 		AddressReuse:  cfg.ReuseAddresses,
-		VotingAddress: cfg.TBOpts.VotingAddress,
+		VotingAddress: cfg.TBOpts.VotingAddress.Address,
 		TicketFee:     cfg.TicketFee.ToCoin(),
 	}
 	loader := loader.NewLoader(activeNet.Params, dbDir, stakeOptions,
-		cfg.GapLimit, cfg.AllowHighFees, cfg.RelayFee.ToCoin())
+		cfg.GapLimit, cfg.AllowHighFees, cfg.RelayFee.ToCoin(), cfg.AccountGapLimit)
 
 	var privPass, pubPass, seed []byte
 	var imported bool
@@ -127,7 +126,7 @@ func createSimulationWallet(cfg *config) error {
 	fmt.Println("Creating the wallet...")
 
 	// Create the wallet database backed by bolt db.
-	db, err := walletdb.Create("bdb", dbPath)
+	db, err := wallet.CreateDB("bdb", dbPath)
 	if err != nil {
 		return err
 	}
@@ -182,7 +181,7 @@ func createWatchingOnlyWallet(cfg *config) error {
 	fmt.Println("Creating the wallet...")
 
 	// Create the wallet database backed by bolt db.
-	db, err := walletdb.Create("bdb", dbPath)
+	db, err := wallet.CreateDB("bdb", dbPath)
 	if err != nil {
 		return err
 	}

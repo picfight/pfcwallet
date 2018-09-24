@@ -15,11 +15,10 @@ import (
 	"github.com/picfight/pfcd/chaincfg/chainec"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
-	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/internal/zero"
-	"github.com/picfight/pfcwallet/snacl"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/snacl"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -1575,13 +1574,13 @@ func (m *Manager) syncAccountToAddrIndex(ns walletdb.ReadWriteBucket, account ui
 		// This can't error as only good input is passed to
 		// pfcutil.NewAddressPubKeyHash.
 		addr, _ := xpubChild.Address(m.chainParams)
-		_, err = fetchAddress(ns, addr.Hash160()[:])
-		if err == nil {
+		hash160 := addr.Hash160()[:]
+		if existsAddress(ns, hash160) {
 			// address was found and there are no more to generate
 			break
 		}
 
-		err = putChainedAddress(ns, addr.Hash160()[:], account, ssFull, branch, child)
+		err = putChainedAddress(ns, hash160, account, ssFull, branch, child)
 		if err != nil {
 			return err
 		}
@@ -2203,16 +2202,7 @@ func loadManager(ns walletdb.ReadBucket, pubPassphrase []byte, chainParams *chai
 // parameters.  At the moment, the parameters have not been upgraded for the new
 // coin types.
 func CoinTypes(params *chaincfg.Params) (legacyCoinType, slip0044CoinType uint32) {
-	// This will need to be rewritten after the chaincfg parameters are updated
-	// for the SLIP0044 coin types.  A test function, TestCoinTypes, exists to
-	// check that the output of this function remains correct after the
-	// parameters are eventually changed.
-	switch params.Net {
-	case wire.MainNet:
-		return params.HDCoinType, 42
-	default:
-		return params.HDCoinType, 1
-	}
+	return params.LegacyCoinType, params.SLIP0044CoinType
 }
 
 // createAddressManager creates a new address manager in the given namespace.

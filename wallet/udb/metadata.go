@@ -6,7 +6,7 @@ package udb
 
 import (
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 )
 
 type unifiedDBMetadata struct {

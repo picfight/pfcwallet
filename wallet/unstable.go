@@ -8,8 +8,8 @@ import (
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/walletdb"
 )
 
 type unstableAPI struct {
