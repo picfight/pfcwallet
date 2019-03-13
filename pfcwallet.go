@@ -21,6 +21,7 @@ import (
 
 	"github.com/picfight/pfcd/addrmgr"
 	"github.com/picfight/pfcd/chaincfg"
+	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcwallet/chain"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/internal/prompt"
@@ -187,21 +188,29 @@ func run(ctx context.Context) error {
 
 		// Load the wallet.  It must have been created already or this will
 		// return an appropriate error.
-		w, err := loader.OpenExistingWallet(walletPass)
-		if err != nil {
-			log.Errorf("Failed to open wallet: %v", err)
-			if errors.Is(errors.Passphrase, err) {
-				// walletpass not provided, advice using --walletpass or --promptpublicpass
-				if cfg.WalletPass == wallet.InsecurePubPassphrase {
-					log.Info("Configure public passphrase with walletpass or promptpublicpass options.")
+		var w *wallet.Wallet
+		errc := make(chan error, 1)
+		go func() {
+			var err error
+			w, err = loader.OpenExistingWallet(walletPass)
+			if err != nil {
+				log.Errorf("Failed to open wallet: %v", err)
+				if errors.Is(errors.Passphrase, err) {
+					// walletpass not provided, advice using --walletpass or --promptpublicpass
+					if cfg.WalletPass == wallet.InsecurePubPassphrase {
+						log.Info("Configure public passphrase with walletpass or promptpublicpass options.")
+					}
 				}
 			}
-
-			return err
-		}
-
-		if done(ctx) {
+			errc <- err
+		}()
+		select {
+		case <-ctx.Done():
 			return ctx.Err()
+		case err := <-errc:
+			if err != nil {
+				return err
+			}
 		}
 
 		// TODO(jrick): I think that this prompt should be removed
@@ -443,6 +452,7 @@ func rpcClientConnectLoop(ctx context.Context, passphrase []byte, jsonRPCServer 
 	for {
 		chainClient, err := startChainRPC(ctx, certs)
 		if err != nil {
+			log.Errorf("Error connecting to RPC server: %v", err)
 			return
 		}
 
@@ -502,8 +512,18 @@ func readCAFile() []byte {
 // authentication error.  Instead, all requests to the client will simply error.
 func startChainRPC(ctx context.Context, certs []byte) (*chain.RPCClient, error) {
 	log.Infof("Attempting RPC client connection to %v", cfg.RPCConnect)
-	rpcc, err := chain.NewRPCClient(activeNet.Params, cfg.RPCConnect,
-		cfg.PfcdUsername, cfg.PfcdPassword, certs, cfg.DisableClientTLS)
+	rpcc, err := chain.NewRPCClientConfig(activeNet.Params, &pfcrpcclient.ConnConfig{
+		Host:                 cfg.RPCConnect,
+		Endpoint:             "ws",
+		User:                 cfg.PfcdUsername,
+		Pass:                 cfg.PfcdPassword,
+		Certificates:         certs,
+		DisableAutoReconnect: true,
+		DisableConnectOnNew:  true,
+		DisableTLS:           cfg.DisableClientTLS,
+		Proxy:                cfg.Proxy,
+		ProxyUser:            cfg.ProxyUser,
+		ProxyPass:            cfg.ProxyPass})
 	if err != nil {
 		return nil, err
 	}

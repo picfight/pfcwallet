@@ -13,14 +13,14 @@ import (
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
+	"github.com/picfight/pfcd/pfcutil"
 	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // TODO: It would be good to send errors during notification creation to the rpc

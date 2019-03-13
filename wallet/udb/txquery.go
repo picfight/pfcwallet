@@ -11,7 +11,7 @@ import (
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // CreditRecord contains metadata regarding a transaction credit for a known
@@ -73,6 +73,7 @@ func (s *Store) minedTxDetails(ns walletdb.ReadBucket, txHash *chainhash.Hash, r
 	credIter := makeReadCreditIterator(ns, recKey, DBVersion)
 	for credIter.next() {
 		if int(credIter.elem.Index) >= len(details.MsgTx.TxOut) {
+			credIter.close()
 			return nil, errors.E(errors.IO, "saved credit index exceeds number of outputs")
 		}
 
@@ -85,11 +86,13 @@ func (s *Store) minedTxDetails(ns walletdb.ReadBucket, txHash *chainhash.Hash, r
 		}
 		details.Credits = append(details.Credits, credIter.elem)
 	}
+	credIter.close()
 	if credIter.err != nil {
 		return nil, credIter.err
 	}
 
 	debIter := makeReadDebitIterator(ns, recKey)
+	defer debIter.close()
 	for debIter.next() {
 		if int(debIter.elem.Index) >= len(details.MsgTx.TxIn) {
 			return nil, errors.E(errors.IO, "saved debit index exceeds number of inputs")
@@ -112,6 +115,7 @@ func (s *Store) unminedTxDetails(ns walletdb.ReadBucket, txHash *chainhash.Hash,
 	}
 
 	it := makeReadUnminedCreditIterator(ns, txHash, DBVersion)
+	defer it.close()
 	for it.next() {
 		if int(it.elem.Index) >= len(details.MsgTx.TxOut) {
 			return nil, errors.E(errors.IO, errors.Errorf("credit output index %d does not exist for tx %v", it.elem.Index, txHash))
@@ -170,9 +174,6 @@ func (s *Store) unminedTxDetails(ns walletdb.ReadBucket, txHash *chainhash.Hash,
 // TxDetails looks up all recorded details regarding a transaction with some
 // hash.  In case of a hash collision, the most recent transaction with a
 // matching hash is returned.
-//
-// Not finding a transaction with this hash is not an error.  In this case,
-// a nil TxDetails is returned.
 func (s *Store) TxDetails(ns walletdb.ReadBucket, txHash *chainhash.Hash) (*TxDetails, error) {
 	// First, check whether there exists an unmined transaction with this
 	// hash.  Use it if found.
@@ -185,8 +186,7 @@ func (s *Store) TxDetails(ns walletdb.ReadBucket, txHash *chainhash.Hash) (*TxDe
 	// hash, skip over to the newest and begin fetching all details.
 	k, v := latestTxRecord(ns, txHash[:])
 	if v == nil {
-		// not found
-		return nil, nil
+		return nil, errors.E(errors.NotExist)
 	}
 	return s.minedTxDetails(ns, txHash, k, v)
 }
@@ -229,7 +229,7 @@ func (s *Store) TicketDetails(ns walletdb.ReadBucket, txDetails *TxDetails) (*Ti
 		}
 	}
 	spenderDetails, err := s.TxDetails(ns, &spenderHash)
-	if err != nil {
+	if (err != nil) && (!errors.Is(errors.NotExist, err)) {
 		return nil, err
 	}
 	ticketDetails.Spender = spenderDetails
@@ -391,6 +391,7 @@ func (s *Store) rangeBlockTransactions(ns walletdb.ReadBucket, begin, end int32,
 	if begin < end {
 		// Iterate in forwards order
 		blockIter = makeReadBlockIterator(ns, begin)
+		defer blockIter.close()
 		advance = func(it *blockIterator) bool {
 			if !it.next() {
 				return false
@@ -400,6 +401,7 @@ func (s *Store) rangeBlockTransactions(ns walletdb.ReadBucket, begin, end int32,
 	} else {
 		// Iterate in backwards order, from begin -> end.
 		blockIter = makeReadBlockIterator(ns, begin)
+		defer blockIter.close()
 		advance = func(it *blockIterator) bool {
 			if !it.prev() {
 				return false
@@ -438,6 +440,7 @@ func (s *Store) rangeBlockTransactions(ns walletdb.ReadBucket, begin, end int32,
 			credIter := makeReadCreditIterator(ns, k, DBVersion)
 			for credIter.next() {
 				if int(credIter.elem.Index) >= len(detail.MsgTx.TxOut) {
+					credIter.close()
 					return false, errors.E(errors.IO, "saved credit index exceeds number of outputs")
 				}
 
@@ -451,11 +454,13 @@ func (s *Store) rangeBlockTransactions(ns walletdb.ReadBucket, begin, end int32,
 				}
 				detail.Credits = append(detail.Credits, credIter.elem)
 			}
+			credIter.close()
 			if credIter.err != nil {
 				return false, credIter.err
 			}
 
 			debIter := makeReadDebitIterator(ns, k)
+			defer debIter.close()
 			for debIter.next() {
 				if int(debIter.elem.Index) >= len(detail.MsgTx.TxIn) {
 					return false, errors.E(errors.IO, "saved debit index exceeds number of inputs")

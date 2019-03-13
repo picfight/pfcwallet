@@ -242,6 +242,8 @@ var helpDescsEnUS = map[string]string{
 	"gettransactionresult-timereceived":    "The earliest Unix time this transaction was known to exist",
 	"gettransactionresult-details":         "Additional details for each recorded wallet credit and debit",
 	"gettransactionresult-hex":             "The transaction encoded as a hexadecimal string",
+	"gettransactionresult-type":            "The type of transaction (regular, ticket, vote, or revocation)",
+	"gettransactionresult-ticketstatus":    "Status of ticket (if transaction is a ticket)",
 
 	// GetTransactionDetailsResult help.
 	"gettransactiondetailsresult-account":           "DEPRECATED -- Unset",
@@ -504,11 +506,11 @@ var helpDescsEnUS = map[string]string{
 	"sweepaccount-requiredconfirmations": "The minimum utxo confirmation requirement (optional).",
 	"sweepaccount-feeperkb":              "The minimum relay fee policy (optional).",
 
-	// SignRawTransactionsResults help.
-	"sweepaccountresult-unsignedtransaction":       "The hex encoded string of the unsigned transaction",
+	// SweepAccountResult help.
+	"sweepaccountresult-unsignedtransaction":       "The hex encoded string of the unsigned transaction.",
 	"sweepaccountresult-totalpreviousoutputamount": "The total transaction input amount.",
 	"sweepaccountresult-totaloutputamount":         "The total transaction output amount.",
-	"sweepaccountresult-estimatedsignedsize":       "The estimated size of the transaction when signed",
+	"sweepaccountresult-estimatedsignedsize":       "The estimated size of the transaction when signed.",
 
 	// ValidateAddressCmd help.
 	"validateaddress--synopsis": "Verify that an address is valid.\n" +

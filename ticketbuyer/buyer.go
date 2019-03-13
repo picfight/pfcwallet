@@ -12,6 +12,7 @@ import (
 
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcwallet/errors"
@@ -496,7 +497,8 @@ func (t *TicketPurchaser) Purchase(height int64) (*PurchaseStats, error) {
 	if err != nil && t.pfcdChainSvr != nil {
 		// Wallet failed to calculate sdiff (DCP0001 may not be active), so
 		// query it over RPC.
-		sd, err := t.pfcdChainSvr.GetStakeDifficulty()
+		var sd *pfcjson.GetStakeDifficultyResult
+		sd, err = t.pfcdChainSvr.GetStakeDifficulty()
 		if err == nil {
 			nextStakeDiff, err = pfcutil.NewAmount(sd.NextStakeDifficulty)
 			if err != nil {

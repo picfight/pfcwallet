@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/gcs"
+	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
-	_ "github.com/picfight/pfcwallet/wallet/internal/walletdb/bdb"
+	_ "github.com/picfight/pfcwallet/wallet/internal/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 func insertMainChainHeaders(s *Store, ns walletdb.ReadWriteBucket, addrmgrNs walletdb.ReadBucket,

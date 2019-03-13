@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 const (

@@ -7,7 +7,7 @@ package udb
 import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // Open opens the database and returns various "manager" types that must be used

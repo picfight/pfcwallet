@@ -19,7 +19,7 @@ import (
 	"github.com/picfight/pfcd/chaincfg/chainec"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // newShaHash converts the passed big-endian hex string into a wire.ShaHash.

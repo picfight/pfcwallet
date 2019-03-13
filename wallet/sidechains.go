@@ -14,7 +14,7 @@ import (
 	"github.com/picfight/pfcd/gcs"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // SidechainForest provides in-memory management of sidechain and orphan blocks.

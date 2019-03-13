@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/decred/slog"
+	"github.com/jrick/logrotate/rotator"
 	"github.com/picfight/pfcd/connmgr"
 	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcwallet/chain"
@@ -22,8 +24,6 @@ import (
 	ticketbuyerv2 "github.com/picfight/pfcwallet/ticketbuyer/v2"
 	"github.com/picfight/pfcwallet/wallet"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/decred/slog"
-	"github.com/jrick/logrotate/rotator"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -102,7 +102,7 @@ func initLogRotator(logFile string) {
 		fmt.Fprintf(os.Stderr, "failed to create log directory: %v\n", err)
 		os.Exit(1)
 	}
-	r, err := rotator.New(logFile, 10*1024, false, 3)
+	r, err := rotator.New(logFile, 10*1024, false, 0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create file rotator: %v\n", err)
 		os.Exit(1)

@@ -11,9 +11,9 @@ import (
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // MakeSecp256k1MultiSigScript creates a multi-signature script that can be
@@ -197,7 +197,7 @@ func (w *Wallet) FetchAllRedeemScripts() ([][]byte, error) {
 func (w *Wallet) PrepareRedeemMultiSigOutTxOutput(msgTx *wire.MsgTx, p2shOutput *P2SHMultiSigOutput, pkScript *[]byte) error {
 	const op errors.Op = "wallet.PrepareRedeemMultiSigOutTxOutput"
 
-	scriptSizes := []int{}
+	scriptSizes := make([]int, 0, len(msgTx.TxIn))
 	// generate the script sizes for the inputs
 	for range msgTx.TxIn {
 		scriptSizes = append(scriptSizes, txsizes.RedeemP2SHSigScriptSize)

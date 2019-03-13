@@ -13,12 +13,12 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainec"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
+	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/internal/zero"
 	"github.com/picfight/pfcwallet/wallet/internal/snacl"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -389,6 +389,8 @@ func (m *Manager) keyToManaged(derivedKey *hdkeychain.ExtendedKey, account, bran
 	if branch == InternalBranch {
 		ma.internal = true
 	}
+
+	ma.index = index
 
 	return ma, nil
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // InsertMemPoolTx inserts a memory pool transaction record.  It also marks
@@ -294,6 +294,7 @@ func (s *Store) PruneUnmined(dbtx walletdb.ReadWriteTx, stakeDiff int64) error {
 	var toRemove []*removeTx
 
 	c := ns.NestedReadBucket(bucketUnmined).ReadCursor()
+	defer c.Close()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
 		var tx wire.MsgTx
 		err := tx.Deserialize(bytes.NewReader(extractRawUnminedTx(v)))

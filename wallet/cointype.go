@@ -7,8 +7,8 @@ package wallet
 import (
 	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // UpgradeToSLIP0044CoinType upgrades the wallet from the legacy BIP0044 coin

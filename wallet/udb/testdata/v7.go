@@ -24,8 +24,8 @@ import (
 	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
-	_ "github.com/picfight/pfcwallet/wallet/internal/walletdb/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
+	_ "github.com/picfight/pfcwallet/wallet/internal/bdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
 	"github.com/picfight/pfcwallet/walletseed"
 )

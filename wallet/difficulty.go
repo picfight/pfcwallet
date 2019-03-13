@@ -19,7 +19,7 @@ import (
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/deployments"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // maxShift is the maximum shift for a difficulty that resets (e.g.

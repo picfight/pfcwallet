@@ -18,7 +18,7 @@ import (
 	"github.com/picfight/pfcwallet/errors"
 )
 
-var requiredChainServerAPI = semver{major: 3, minor: 1, patch: 0}
+var requiredChainServerAPI = semver{major: 5, minor: 0, patch: 0}
 
 // RPCClient represents a persistent client connection to a picfight RPC server
 // for information regarding the current best block chain.
@@ -38,26 +38,32 @@ type RPCClient struct {
 	quitMtx sync.Mutex
 }
 
-// NewRPCClient creates a client connection to the server described by the
+// NewRPCClient creates a direct client connection to the server described by the
 // connect string.  If disableTLS is false, the remote RPC certificate must be
 // provided in the certs slice.  The connection is not established immediately,
 // but must be done using the Start method.  If the remote server does not
 // operate on the same picfight network as described by the passed chain
 // parameters, the connection will be disconnected.
+// Deprecated: use NewRPCClientConfig
 func NewRPCClient(chainParams *chaincfg.Params, connect, user, pass string, certs []byte,
 	disableTLS bool) (*RPCClient, error) {
+	return NewRPCClientConfig(chainParams, &pfcrpcclient.ConnConfig{
+		Host:                 connect,
+		Endpoint:             "ws",
+		User:                 user,
+		Pass:                 pass,
+		Certificates:         certs,
+		DisableAutoReconnect: true,
+		DisableConnectOnNew:  true,
+		DisableTLS:           disableTLS,
+	})
+}
 
+// NewRPCClientConfig creates a client connection to the server described by the
+// passed chainParams and connConfig
+func NewRPCClientConfig(chainParams *chaincfg.Params, connConfig *pfcrpcclient.ConnConfig) (*RPCClient, error) {
 	client := &RPCClient{
-		connConfig: &pfcrpcclient.ConnConfig{
-			Host:                 connect,
-			Endpoint:             "ws",
-			User:                 user,
-			Pass:                 pass,
-			Certificates:         certs,
-			DisableAutoReconnect: true,
-			DisableConnectOnNew:  true,
-			DisableTLS:           disableTLS,
-		},
+		connConfig:                connConfig,
 		chainParams:               chainParams,
 		enqueueNotification:       make(chan interface{}),
 		dequeueNotification:       make(chan interface{}),
@@ -122,8 +128,8 @@ func (c *RPCClient) Start(ctx context.Context, retry bool) (err error) {
 		}
 	}
 	if !semverCompatible(requiredChainServerAPI, serverAPI) {
-		return errors.E(op, errors.Errorf("advertised API version %v incompatible"+
-			"with required verison %v", serverAPI, requiredChainServerAPI))
+		return errors.E(op, errors.Errorf("advertised API version %v incompatible "+
+			"with required version %v", serverAPI, requiredChainServerAPI))
 	}
 
 	c.quitMtx.Lock()

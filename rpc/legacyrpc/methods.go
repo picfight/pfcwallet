@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,10 +21,10 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
@@ -402,16 +403,12 @@ func addTicket(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	rawTx, err := hex.DecodeString(cmd.TicketHex)
-	if err != nil {
-		return nil, rpcError(pfcjson.ErrRPCDecodeHexString, err)
-	}
-
 	mtx := new(wire.MsgTx)
-	err = mtx.Deserialize(bytes.NewReader(rawTx))
+	err := mtx.Deserialize(hex.NewDecoder(strings.NewReader(cmd.TicketHex)))
 	if err != nil {
 		return nil, rpcError(pfcjson.ErrRPCDeserialization, err)
 	}
+
 	err = w.AddTicket(mtx)
 	return nil, err
 }
@@ -544,15 +541,14 @@ func generateVote(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	// TODO: Switch to strings.Builder and hex.NewEncoder (introduced in Go 1.10)
-	var buf bytes.Buffer
-	buf.Grow(ssgentx.SerializeSize())
-	err = ssgentx.Serialize(&buf)
+	var b strings.Builder
+	b.Grow(2 * ssgentx.SerializeSize())
+	err = ssgentx.Serialize(hex.NewEncoder(&b))
 	if err != nil {
 		return nil, err
 	}
 	resp := &pfcjson.GenerateVoteResult{
-		Hex: hex.EncodeToString(buf.Bytes()),
+		Hex: b.String(),
 	}
 	return resp, nil
 }
@@ -1157,13 +1153,13 @@ func getMultisigOutInfo(s *Server, icmd interface{}) (interface{}, error) {
 	}
 
 	// Get the list of pubkeys required to sign.
-	var pubkeys []string
 	_, pubkeyAddrs, _, err := txscript.ExtractPkScriptAddrs(
 		txscript.DefaultScriptVersion, p2shOutput.RedeemScript,
 		w.ChainParams())
 	if err != nil {
 		return nil, err
 	}
+	pubkeys := make([]string, 0, len(pubkeyAddrs))
 	for _, pka := range pubkeyAddrs {
 		pubkeys = append(pubkeys, hex.EncodeToString(pka.ScriptAddress()))
 	}
@@ -1192,8 +1188,6 @@ func getMultisigOutInfo(s *Server, icmd interface{}) (interface{}, error) {
 // getNewAddress handles a getnewaddress request by returning a new
 // address for an account.  If the account does not exist an appropiate
 // error is returned.
-// TODO: Follow BIP 0044 and warn if number of unused addresses exceeds
-// the gap limit.
 func getNewAddress(s *Server, icmd interface{}) (interface{}, error) {
 	cmd := icmd.(*pfcjson.GetNewAddressCmd)
 	w, ok := s.walletLoader.LoadedWallet()
@@ -1466,19 +1460,17 @@ func getTransaction(s *Server, icmd interface{}) (interface{}, error) {
 
 	// returns nil details when not found
 	txd, err := wallet.UnstableAPI(w).TxDetails(txHash)
-	if err != nil {
-		return nil, err
-	}
-	if txd == nil {
+	if errors.Is(errors.NotExist, err) {
 		return nil, rpcErrorf(pfcjson.ErrRPCNoTxInfo, "no information for transaction")
+	} else if err != nil {
+		return nil, err
 	}
 
 	_, tipHeight := w.MainChainTip()
 
-	// TODO: Switch to strings.Builder and hex.NewEncoder (introduced in Go 1.10)
-	var buf bytes.Buffer
-	buf.Grow(txd.MsgTx.SerializeSize())
-	err = txd.MsgTx.Serialize(&buf)
+	var b strings.Builder
+	b.Grow(2 * txd.MsgTx.SerializeSize())
+	err = txd.MsgTx.Serialize(hex.NewEncoder(&b))
 	if err != nil {
 		return nil, err
 	}
@@ -1487,7 +1479,7 @@ func getTransaction(s *Server, icmd interface{}) (interface{}, error) {
 	// is only added if the transaction is a coinbase.
 	ret := pfcjson.GetTransactionResult{
 		TxID:            cmd.Txid,
-		Hex:             hex.EncodeToString(buf.Bytes()),
+		Hex:             b.String(),
 		Time:            txd.Received.Unix(),
 		TimeReceived:    txd.Received.Unix(),
 		WalletConflicts: []string{}, // Not saved
@@ -2294,17 +2286,16 @@ func redeemMultiSigOut(s *Server, icmd interface{}) (interface{}, error) {
 	}
 	rtis := []pfcjson.RawTxInput{rti}
 
-	// TODO: Switch to strings.Builder and hex.NewEncoder (introduced in Go 1.10)
-	var buf bytes.Buffer
-	buf.Grow(msgTx.SerializeSize())
-	err = msgTx.Serialize(&buf)
+	var b strings.Builder
+	b.Grow(2 * msgTx.SerializeSize())
+	err = msgTx.Serialize(hex.NewEncoder(&b))
 	if err != nil {
 		return nil, err
 	}
 	sigHashAll := "ALL"
 
 	srtc := &pfcjson.SignRawTransactionCmd{
-		RawTx:    hex.EncodeToString(buf.Bytes()),
+		RawTx:    b.String(),
 		Inputs:   &rtis,
 		PrivKeys: &[]string{},
 		Flags:    &sigHashAll,
@@ -2437,6 +2428,8 @@ func stakePoolUserInfo(s *Server, icmd interface{}) (interface{}, error) {
 	}
 
 	resp := new(pfcjson.StakePoolUserInfoResult)
+	resp.Tickets = make([]pfcjson.PoolUserTicket, 0, len(spui.Tickets))
+	resp.InvalidTickets = make([]string, 0, len(spui.InvalidTickets))
 	for _, ticket := range spui.Tickets {
 		var ticketRes pfcjson.PoolUserTicket
 
@@ -2802,13 +2795,8 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, errUnloadedWallet
 	}
 
-	// TODO: Switch to hex.NewDecoder (introduced in Go 1.10)
 	tx := wire.NewMsgTx()
-	rawTx, err := hex.DecodeString(cmd.RawTx)
-	if err != nil {
-		return nil, rpcError(pfcjson.ErrRPCDeserialization, err)
-	}
-	err = tx.Deserialize(bytes.NewReader(rawTx))
+	err := tx.Deserialize(hex.NewDecoder(strings.NewReader(cmd.RawTx)))
 	if err != nil {
 		return nil, rpcError(pfcjson.ErrRPCDeserialization, err)
 	}
@@ -2986,10 +2974,9 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	// TODO: Switch to strings.Builder and hex.NewEncoder (introduced in Go 1.10)
-	var buf bytes.Buffer
-	buf.Grow(tx.SerializeSize())
-	err = tx.Serialize(&buf)
+	var b strings.Builder
+	b.Grow(2 * tx.SerializeSize())
+	err = tx.Serialize(hex.NewEncoder(&b))
 	if err != nil {
 		return nil, err
 	}
@@ -3007,7 +2994,7 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 	}
 
 	return pfcjson.SignRawTransactionResult{
-		Hex:      hex.EncodeToString(buf.Bytes()),
+		Hex:      b.String(),
 		Complete: len(signErrors) == 0,
 		Errors:   signErrors,
 	}, nil
@@ -3049,12 +3036,7 @@ func signRawTransactions(s *Server, icmd interface{}) (interface{}, error) {
 			if result.Complete {
 				// Slow/mem hungry because of the deserializing.
 				msgTx := wire.NewMsgTx()
-				// TODO: Switch to hex.NewDecoder (introduced in Go 1.10)
-				rawTx, err := hex.DecodeString(result.Hex)
-				if err != nil {
-					return nil, rpcError(pfcjson.ErrRPCDeserialization, err)
-				}
-				err = msgTx.Deserialize(bytes.NewReader(rawTx))
+				err := msgTx.Deserialize(hex.NewDecoder(strings.NewReader(result.Hex)))
 				if err != nil {
 					return nil, rpcError(pfcjson.ErrRPCDeserialization, err)
 				}
@@ -3289,16 +3271,15 @@ func sweepAccount(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	// TODO: Switch to strings.Builder and hex.NewEncoder (introduced in Go 1.10)
-	var buf bytes.Buffer
-	buf.Grow(tx.Tx.SerializeSize())
-	err = tx.Tx.Serialize(&buf)
+	var b strings.Builder
+	b.Grow(2 * tx.Tx.SerializeSize())
+	err = tx.Tx.Serialize(hex.NewEncoder(&b))
 	if err != nil {
 		return nil, err
 	}
 
 	res := &pfcjson.SweepAccountResult{
-		UnsignedTransaction:       hex.EncodeToString(buf.Bytes()),
+		UnsignedTransaction:       b.String(),
 		TotalPreviousOutputAmount: tx.TotalInput.ToCoin(),
 		TotalOutputAmount:         helpers.SumOutputValues(tx.Tx.TxOut).ToCoin(),
 		EstimatedSignedSize:       uint32(tx.EstimatedSignedSerializeSize),

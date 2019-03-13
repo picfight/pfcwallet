@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/hdkeychain"
+	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 func TestCoinTypes(t *testing.T) {

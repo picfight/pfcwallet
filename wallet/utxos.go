@@ -8,9 +8,9 @@ import (
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // OutputSelectionPolicy describes the rules for selecting an output from the

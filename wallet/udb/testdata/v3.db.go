@@ -16,8 +16,8 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcutil/hdkeychain"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
-	_ "github.com/picfight/pfcwallet/wallet/internal/walletdb/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
+	_ "github.com/picfight/pfcwallet/wallet/internal/bdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
 	"github.com/picfight/pfcwallet/walletseed"
 )

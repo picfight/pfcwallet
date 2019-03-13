@@ -68,6 +68,25 @@ const (
 	//   - OP_CHECKSIG
 	P2PKHPkScriptSize = 1 + 1 + 1 + 20 + 1 + 1
 
+	// P2SHPkScriptSize is the size of a transaction output script that
+	// pays to a script hash.  It is calculated as:
+	//
+	//   - OP_HASH160
+	//   - OP_DATA_20
+	//   - 20 bytes script hash
+	//   - OP_EQUAL
+	P2SHPkScriptSize = 1 + 1 + 20 + 1
+
+	// TicketCommitmentScriptSize is the size of a ticket purchase commitment
+	// script. It is calculated as:
+	//
+	//   - OP_RETURN
+	//   - OP_DATA_30
+	//   - 20 bytes P2SH/P2PKH
+	//   - 8 byte amount
+	//   - 2 byte fee range limits
+	TicketCommitmentScriptSize = 1 + 1 + 20 + 8 + 2
+
 	// P2PKHOutputSize is the serialize size of a transaction output with a
 	// P2PKH output script.  It is calculated as:
 	//
@@ -84,7 +103,7 @@ const (
 // additional change output if changeScriptSize is greater than 0. Passing 0
 // does not add a change output.
 func EstimateSerializeSize(scriptSizes []int, txOuts []*wire.TxOut, changeScriptSize int) int {
-	// generate the estimated sizes of the inputs
+	// Generate and sum up the estimated sizes of the inputs.
 	txInsSize := 0
 	for _, size := range scriptSizes {
 		txInsSize += EstimateInputSize(size)
@@ -104,6 +123,39 @@ func EstimateSerializeSize(scriptSizes []int, txOuts []*wire.TxOut, changeScript
 		txInsSize +
 		h.SumOutputSerializeSizes(txOuts) +
 		changeSize
+}
+
+// EstimateSerializeSizeFromScriptSizes returns a worst case serialize size
+// estimate for a signed transaction that spends len(inputSizes) previous
+// outputs and pays to len(outputSizes) outputs with scripts of the provided
+// worst-case sizes. The estimated size is incremented for an additional
+// change output if changeScriptSize is greater than 0. Passing 0 does not
+// add a change output.
+func EstimateSerializeSizeFromScriptSizes(inputSizes []int, outputSizes []int, changeScriptSize int) int {
+	// Generate and sum up the estimated sizes of the inputs.
+	txInsSize := 0
+	for _, inputSize := range inputSizes {
+		txInsSize += EstimateInputSize(inputSize)
+	}
+
+	// Generate and sum up the estimated sizes of the outputs.
+	txOutsSize := 0
+	for _, outputSize := range outputSizes {
+		txOutsSize += EstimateOutputSize(outputSize)
+	}
+
+	inputCount := len(inputSizes)
+	outputCount := len(outputSizes)
+	changeSize := 0
+	if changeScriptSize > 0 {
+		changeSize = EstimateOutputSize(changeScriptSize)
+		outputCount++
+	}
+
+	// 12 additional bytes are for version, locktime and expiry.
+	return 12 + (2 * wire.VarIntSerializeSize(uint64(inputCount))) +
+		wire.VarIntSerializeSize(uint64(outputCount)) +
+		txInsSize + txOutsSize + changeSize
 }
 
 // EstimateInputSize returns the worst case serialize size estimate for a tx input

@@ -1,6 +1,6 @@
 # RPC API Specification
 
-Version: 5.1.x
+Version: 5.8.x
 
 **Note:** This document assumes the reader is familiar with gRPC concepts.
 Refer to the [gRPC Concepts documentation](http://www.grpc.io/docs/guides/concepts.html)
@@ -40,6 +40,7 @@ existing wallet.
 - [`WalletService`](#walletservice)
 - [`SeedService`](#seedservice)
 - [`TicketBuyerService`](#ticketbuyerservice)
+- [`TicketBuyerV2Service`](#ticketbuyerv2service)
 - [`AgendaService`](#agendaservice)
 - [`VotingService`](#votingservice)
 - [`MessageVerificationService`](#messageverificationservice)
@@ -101,6 +102,7 @@ no dependencies and is always running.
 - [`FetchMissingCFilters`](#fetchmissingcfilters)
 - [`RescanPoint`](#rescanpoint)
 - [`SpvSync`](#spvsync)
+- [`RpcSync`](#rpcsync)
 
 **Shared messages:**
 
@@ -447,7 +449,24 @@ or upon received an error.
 **Response:** `stream SpvSyncResponse`
 
 - `bool synced`: This streamed update response denotes whether the wallet is
-  currently synced to its peers or not.
+  synced or not.
+
+- `SyncNotificationType notification_type`: This denotes what type of
+  notification has been sent by the wallet.
+
+- `FetchHeadersNotification fetch_headers`: This contains all the information
+  for a fetch headers notification response.  In any other case it will be 
+  set to nil.
+
+- `FetchMissingCFiltersNotification fetch_missing_cfilters`: This contains all
+  the information for a fetch missing cfilters notification response.  In any
+  other case it will be set to nil.
+
+- `RescanProgressNotifiction rescan_progress`: This contains all the information
+  for a rescan progress notification.  In any other case it will be set to nil.
+
+- `PeerNotification peer_information`: This contains information about the
+  current state of the wallet's peers.
 
 **Expected Errors:**
 
@@ -456,6 +475,87 @@ or upon received an error.
   provided to spv_connect is not a valid address or port.
 
 - `InvalidArgument`: The private passphrase is incorrect.
+
+**Stability:** Unstable
+
+#### `RpcSync`
+
+The `RpcSync` method begins the syncing process via rpc connection to a daemon. 
+It will stream back progress to provide feedback on the current state of the
+wallet loading/bringup.  This is a long lived RPC and only end when canceled
+or upon received an error.
+
+**Request:** `RpcSyncRequest`
+
+- `string network_address`: The host/IP and optional port of the RPC server to
+  connect to.  IP addresses may be IPv4 or IPv6.  If the port is missing, a
+  default port is chosen corresponding to the default pfcd RPC port of the
+  active PicFight network.
+
+- `string username`: The RPC username required to authenticate to the RPC
+  server.
+
+- `bytes password`: The RPC password required to authenticate to the RPC server.
+
+- `bytes certificate`: The consensus RPC server's TLS certificate.  If this
+  field has zero length and the network address describes a loopback connection
+  (`localhost`, `127.0.0.1`, or `::1`) TLS will be disabled.
+
+- `bool discover_accounts`:  Whether or not the wallet should attempt to
+  discover accounts during discovery.  This requires the private passphrase to
+  be set as well and will error otherwise.
+
+- `bytes private_passphrase`: The current private passphrase for the wallet.
+  This is only required if discover_accounts is set to true and will error
+  otherwise.
+
+- `repeated string spv_connect`: When given a list of addresses, the wallet in
+  spv mode will no longer attempt to use DNS address discovery to seek out other
+  persistent peers and instead use the ones specified here as persistent peers.
+
+**Response:** `stream RpcSyncResponse`
+
+- `bool synced`: This streamed update response denotes whether the wallet is
+  synced or not.
+
+- `SyncNotificationType notification_type`: This denotes what type of
+  notification has been sent by the wallet.
+
+- `FetchHeadersNotification fetch_headers`: This contains all the information
+  for a fetch headers notification response.  In any other case it will be 
+  set to nil.
+
+- `FetchMissingCFiltersNotification fetch_missing_cfilters`: This contains all
+  the information for a fetch missing cfilters notification response.  In any
+  other case it will be set to nil.
+
+- `RescanProgressNotifiction rescan_progress`: This contains all the information
+  for a rescan progress notification.  In any other case it will be set to nil.
+
+- `SyncingStatus syncing_status`: Various properties to describe the current
+  state of syncing the wallet is currently performing.  Once synced, this will
+  be set to nil.
+
+**Expected Errors:**
+
+- `InvalidArgument`: The network address is ill-formatted or does not contain a
+  valid IP address.
+  
+- `InvalidArgument`: The private passphrase is not supplied, but discoveraccounts
+  is requested. 
+
+- `InvalidArgument`: The username, password, or certificate are invalid.  This
+  condition may not be return `Unauthenticated` as that refers to the client not
+  having the credentials to call this method.
+
+- `Unavailable`: The consensus RPC server is unreachable.
+
+- `FailedPrecondition`: A consensus RPC client is already active.
+
+- `FailedPrecondition`: The wallet or consensus RPC server has not been opened.
+
+- `FailedPrecondition`: The private passphrase does not successfully unlock the
+  wallet.
 
 **Stability:** Unstable
 
@@ -475,6 +575,7 @@ The service provides the following methods:
 - [`BlockInfo`](#blockinfo)
 - [`GetTransaction`](#gettransaction)
 - [`GetTransactions`](#gettransactions)
+- [`GetTicket`](#getticket)
 - [`GetTickets`](#gettickets)
 - [`ChangePassphrase`](#changepassphrase)
 - [`RenameAccount`](#renameaccount)
@@ -504,6 +605,7 @@ The service provides the following methods:
 - [`ConfirmationNotifications`](#confirmationnotifications)
 - [`CommittedTickets`](#committedtickets)
 - [`BestBlock`](#bestblock)
+- [`SweepAccount`](#sweepaccount)
 
 #### `Ping`
 
@@ -844,6 +946,25 @@ transactions (and no mined transactions).
 - A specified ordering (such as dependency order) for all returned unmined
   transactions would be useful.
 
+___
+
+#### `GetTicket`
+
+The `GetTicket` method queries the wallet for the provided ticket.
+
+**Request:** `GetTicketRequest`
+
+- `bytes ticket_hash`: The hash of the ticket being queried.
+
+**Response:** `GetTicketsResponse`
+
+Refer to [GetTickets](#gettickets) response documentation.
+
+**Expected errors:**
+
+- `InvalidArgument`: The ticket hash field did not have the correct length.
+
+- `NotFound`: The specified transaction is not known by the wallet. 
 ___
 
 #### `GetTickets`
@@ -1701,6 +1822,8 @@ owned and votes cast.
 
 - `int64 total_subsidy`: The total subsidy received by the user for stake mining.
 
+- `uint32 unspent`: The number of unspent tickets. This could include live, missed or expired tickets.
+
 **Expected errors:** None
 
 **Stability:** Unstable
@@ -1910,7 +2033,8 @@ The `ValidateAddress` method verifies if an address is valid.
 
 - `bool is_mine`: True if the address is an address of the querying wallet, false if not.
 
-- `uint32 account_number`:  The account number of the wallet.
+- `uint32 account_number`:  The account number of the wallet. For watch-only
+  wallets this will always be 0.
 
 - `string pub_key_addr`: The public key address.
 
@@ -1925,6 +2049,12 @@ The `ValidateAddress` method verifies if an address is valid.
 - `bytes pay_to_addr_script`: The redeem script.
 
 - `uint32 sigs_required`: The number of signatures required.
+
+- `bool is_internal`: True if the address is from the internal branch of the hd
+  wallet.
+
+- `index`: The child index for addresses derived from hd public keys. It will be
+  0 for other types of addresses.
 ___
 
 #### `CommittedTickets`
@@ -1960,6 +2090,30 @@ the main chain.
 - `bytes hash`: The hash of the best block.
 
 - `uint32 height`: The height of the best block.
+___
+
+#### `SweepAccount`
+
+The `SweepAccount` method Moves as much value as possible in a transaction from
+an account per the request parameters.
+
+**Request:** `SweepAccountRequest`
+- `string source_account`:  The account to be swept.
+
+- `string destination_address`: The destination address to pay to.
+
+- `uint32 required_confirmations`: The minimum utxo confirmation requirement.
+
+- `double fee_per_kb`: The minimum relay fee policy (optional).
+
+**Response:** `SweepAccountResponse`
+- `bytes unsigned_transaction`: The unsigned transaction bytes.
+
+- `int64 total_previous_output_amount`: The total transaction input amount.
+
+- `int64 total_output_amount`: The total transaction output amount.
+
+- `uint32 estimated_signed_size`: The estimated size of the transaction when signed.
 ___
 
 #### `TransactionNotifications`
@@ -2294,6 +2448,99 @@ transaction.
 
 **Stability**: Unstable.
 
+___
+#### `SyncNotificationType`
+
+The `SyncNotificationType` enum contains all the various different types of
+notifications that can occur during the syncing process.  When any notification
+is sent there will be a type included.
+
+- `SYNCED`: When the wallet is synced to its connected peers.
+
+- `UNSYNCED`: When the wallet is unsynced to its connected peers.
+
+- `PEER_CONNECTED`: When a peer connects to the wallet.  This is only available
+  while using SPV.
+
+- `PEER_DISCONNECTED`: When a peer disconnects from the wallet.  This is only
+  available while using SPV.
+
+- `FETCHED_MISSING_CFILTERS_STARTED`: Notifies when the wallet attempts to find
+  any missing committed filters.
+
+- `FETCHED_MISSING_CFILTERS_PROGRESS`: When any missing committed filters are
+  found and the progress is notified.
+
+- `FETCHED_MISSING_CFILTERS_FINISHED`: Notifies when the wallet is finished
+  fetching any missing committed filters.
+
+- `FETCHED_HEADERS_STARTED`: Notifies when the wallet attempts to fetch headers
+  from connected peers. 
+
+- `FETCHED_HEADERS_PROGRESS`: When new headers are received by the wallet, any
+  progress is notified.
+
+- `FETCHED_HEADERS_FINISHED`: Notifies when the wallet has completed fetching
+  headers.
+
+- `DISCOVER_ADDRESSES_STARTED`: Notifies when the wallet has begun the discover
+  addresses process.
+
+- `DISCOVER_ADDRESSES_FINISHED`: Notifies when the wallet has finished the
+  discover addesses process.
+
+- `RESCAN_STARTED`: When the rescan process has begun (if at all).
+
+- `RESCAN_PROGRESS`: When the rescan process has any progress to update.
+
+- `RESCAN_FINISHED`: When the rescan procress has finished.
+
+___
+#### `FetchHeadersNotification`
+
+The `FetchHeadersNotification` message is used during the syncing process for
+any fetch headers notification updates.  It contains the count of the fetched
+headers and the time of the last header fetched.
+
+- `int32 fetched_headers_count`: The number of headers recently fetched.
+
+- `int64 last_header_time`: The time (in nanoseconds) of the last header that
+  was fetched.
+
+___
+#### `FetchMissingCFiltersNotification`
+
+The `FetchMissingCFiltersNotification` message is used during the syncing
+process for any fetch missing committed filters notification updates.
+It may contain the starting and ending height of the filters that were found.
+
+- `int32 fetched_cfilters_start_height`: The height of the first missing
+  committed filter that was found.
+- `int32 fetched_cfilters_end_height`: The height of the last missing committed
+  filter that was found.
+
+___
+#### `RescanProgressNotification`
+
+The `RescanProgressNotification` message is used during the syncing process
+for any rescan progress notification updates.  It will contain the height
+of the block that the rescan process has gotten through.
+
+- `int32 rescanned_through`:  The block height that rescan has progressed
+  through.
+
+___
+#### `PeerNotification`
+
+The `PeerNotification` message is used during the syncing process for any peer
+information updates.  This includes peer count and possibly the address of
+the peer that caused a notification to be sent.
+
+- `int32 peer_count`:  The number of peers currently connected.
+
+- `string address`:  The address of the peer that caused the notification.
+
+___
 ## `SeedService`
 
 The `SeedService` service provides RPC clients with the ability to generate
@@ -2709,6 +2956,52 @@ ticket buyer.
 **Expected errors:**
 
 - `FailedPrecondition`: Ticket buyer is not running.
+
+**Stability:** Unstable
+
+## `TicketBuyerV2Service`
+
+The `TicketBuyerV2Service` service provides RPC clients with the ability to
+launch the V2 ticket buyer.  
+
+**Methods:**
+
+- [`RunTicketBuyer`](#runautobuyer)
+
+### Methods
+
+#### `RunTicketBuyer`
+
+The `RunTicketBuyer` starts a new V2 ticket buyer for the specified account.
+The users may specify a balance to maintain as well as various settings for purchasing tickets for stakepools.
+
+**Request:** `RunTicketBuyerRequest`
+
+- `bytes passphrase`: The private passphrase to unlock the wallet.
+
+- `uint32 account`: The account number from which to purchase the tickets.
+
+- `uint32 voting_account`: The account that will be used for the voting address (if no voting address is specified.) 
+
+- `int64 balance_to_maintain`: When set, the account will purchase as many tickets as possible without going under this amount.
+
+- `string voting_address`: The address to give the tickets purchased voting rights.
+
+- `string pool_address`: The address that will be used in any stakepool fee commitment utxos.
+
+- `double pool_fees`: The percentage used to calculate the proper fee in the stakepool fee commitment utxos.
+
+**Response:** `stream RunTicketBuyerResponse`
+
+**Expected errors:**
+
+- `FailedPrecondition`: Wallet has not been loaded.
+
+- `InvalidArgument`: An invalid voting address was used.
+
+- `InvalidArgument`: An invalid pool address was used.
+
+- `InvalidArgument`: A negative balance to maintain given.
 
 **Stability:** Unstable
 

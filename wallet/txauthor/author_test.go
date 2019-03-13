@@ -42,7 +42,7 @@ func makeInputSource(unspents []*wire.TxOut) InputSource {
 	// Return outputs in order.
 	currentTotal := pfcutil.Amount(0)
 	currentInputs := make([]*wire.TxIn, 0, len(unspents))
-	var redeemScriptSizes []int
+	redeemScriptSizes := make([]int, 0, len(unspents))
 	f := func(target pfcutil.Amount) (*InputDetail, error) {
 		for currentTotal < target && len(unspents) != 0 {
 			u := unspents[0]

@@ -8,7 +8,7 @@ import (
 	"io"
 
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // DB represents an ACID database for a wallet.

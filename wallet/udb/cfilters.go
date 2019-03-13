@@ -8,7 +8,7 @@ import (
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/gcs"
 	"github.com/picfight/pfcd/gcs/blockcf"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // CFilter returns the saved regular compact filter for a block.

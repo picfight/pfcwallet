@@ -68,86 +68,51 @@ Wallet clients interact with the wallet using one of two RPC servers:
 
 ## Installation and updating
 
-### Windows - MSIs Available
+### Binaries (Windows/Linux/macOS)
 
-Install the latest MSIs available here:
+Binary releases are provided for common operating systems and architectures:
 
-https://github.com/picfight/picfight-release/releases
+https://github.com/decred/decred-binaries/releases
 
-### Windows/Linux/BSD/POSIX - Build from source
+### Build from source (all platforms)
 
 Building or updating from source requires the following build dependencies:
 
-- **Go 1.9 or 1.10**
+- **Go 1.10 or 1.11**
 
-  Installation instructions can be found here: http://golang.org/doc/install.
+  Installation instructions can be found here: https://golang.org/doc/install.
   It is recommended to add `$GOPATH/bin` to your `PATH` at this point.
 
-- **Dep**
+- **Vgo (Go 1.10 only)**
 
-  Dep is used to manage project dependencies and provide reproducible builds.
-  It is recommended to use the latest Dep release, unless a bug prevents doing
-  so.  The latest releases (for both binary and source) can be found
-  [here](https://github.com/golang/dep/releases).
+  The `GO111MODULE` experiment is used to manage project dependencies and
+  provide reproducible builds.  The module experiment is provided by the Go 1.11
+  toolchain, but the Go 1.10 toolchain does not provide any module support.  To
+  perform module-aware builds with Go 1.10,
+  [vgo](https://godoc.org/golang.org/x/vgo) (a drop-in replacement for the go
+  command) must be used instead.
 
-Unfortunately, the use of `dep` prevents a handy tool such as `go get` from
-automatically downloading, building, and installing the source in a single
-command.  Instead, the latest project and dependency sources must be first
-obtained manually with `git` and `dep`, and then `go` is used to build and
-install the project.
+To build and install from a checked-out repo, run `go install` in the repo's
+root directory.  Some notes:
 
-**Getting the source**:
+* Set the `GO111MODULE=on` environment variable if using Go 1.11 and building
+  from within `GOPATH`.
 
-For a first time installation, the project and dependency sources can be
-obtained manually with `git` and `dep` (create directories as needed):
+* Replace `go` with `vgo` when using Go 1.10.
 
-```
-git clone https://github.com/picfight/pfcwallet $GOPATH/src/github.com/picfight/pfcwallet
-cd $GOPATH/src/github.com/picfight/pfcwallet
-dep ensure
-```
-
-To update an existing source tree, pull the latest changes and install the
-matching dependencies:
-
-```
-cd $GOPATH/src/github.com/picfight/pfcwallet
-git pull
-dep ensure
-```
-
-**Building/Installing**:
-
-The `go` tool is used to build or install (to `GOPATH`) the project.  Some
-example build instructions are provided below (all must run from the `pfcwallet`
-project directory).
-
-To build and install `pfcwallet` and all helper commands (in the `cmd`
-directory) to `$GOPATH/bin/`, as well as installing all compiled packages to
-`$GOPATH/pkg/` (**use this if you are unsure which command to run**):
-
-```
-go install . ./cmd/...
-```
-
-To build a `pfcwallet` executable and install it to `$GOPATH/bin/`:
-
-```
-go install
-```
-
-To build a `pfcwallet` executable and place it in the current directory:
-
-```
-go build
-```
+* The `pfcwallet` executable will be installed to `$GOPATH/bin`.  `GOPATH`
+  defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
 
 ## Docker
 
-All tests and linters may be run in a docker container using the script `run_tests.sh`.  This script defaults to using the current supported version of go.  You can run it with the major version of go you would like to use as the only arguement to test a previous on a previous version of go (generally picfight supports the current version of go and the previous one).
+All tests and linters may be run in a docker container using the script
+`run_tests.sh`.  This script defaults to using the current supported version of
+go.  You can run it with the major version of go you would like to use as the
+only arguement to test a previous on a previous version of go (generally decred
+supports the current version of go and the previous one).
 
 ```
-./run_tests.sh 1.9
+./run_tests.sh 1.10
 ```
 
 To run the tests locally without docker:
@@ -184,18 +149,10 @@ If everything appears to be working, it is recommended at this point to
 copy the sample pfcd and pfcwallet configurations and update with your
 RPC username and password.
 
-PowerShell (Installed from MSI):
-```
-PS> cp "$env:ProgramFiles\PicFight\Pfcd\sample-pfcd.conf" $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> cp "$env:ProgramFiles\PicFight\Pfcwallet\sample-pfcwallet.conf" $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
-PS> $editor $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> $editor $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
-```
-
 PowerShell (Installed from source):
 ```
-PS> cp $env:GOPATH\src\github.com\picfight\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> cp $env:GOPATH\src\github.com\picfight\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
+PS> cp $env:GOPATH\src\github.com\decred\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Pfcd\pfcd.conf
+PS> cp $env:GOPATH\src\github.com\decred\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 PS> $editor $env:LOCALAPPDATA\Pfcd\pfcd.conf
 PS> $editor $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 ```

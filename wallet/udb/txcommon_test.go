@@ -15,12 +15,12 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/gcs"
 	"github.com/picfight/pfcd/gcs/blockcf"
+	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
 	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 func setup() (db walletdb.DB, s *Store, teardown func(), err error) {

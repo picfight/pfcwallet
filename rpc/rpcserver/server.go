@@ -35,9 +35,9 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/hdkeychain"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
@@ -52,6 +52,7 @@ import (
 	pb "github.com/picfight/pfcwallet/rpc/walletrpc"
 	"github.com/picfight/pfcwallet/spv"
 	"github.com/picfight/pfcwallet/ticketbuyer"
+	tbv2 "github.com/picfight/pfcwallet/ticketbuyer/v2"
 	"github.com/picfight/pfcwallet/wallet"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
@@ -61,9 +62,9 @@ import (
 
 // Public API version constants
 const (
-	semverString = "5.1.0"
+	semverString = "5.6.0"
 	semverMajor  = 5
-	semverMinor  = 1
+	semverMinor  = 6
 	semverPatch  = 0
 )
 
@@ -189,6 +190,13 @@ type ticketbuyerServer struct {
 	ticketbuyerCfg *ticketbuyer.Config
 }
 
+// ticketbuyerServer provides RPC clients with the ability to start/stop the
+// automatic ticket buyer service.
+type ticketbuyerV2Server struct {
+	ready  uint32 // atomic
+	loader *loader.Loader
+}
+
 type agendaServer struct {
 	ready     uint32 // atomic
 	activeNet *chaincfg.Params
@@ -215,6 +223,7 @@ var (
 	loaderService              loaderServer
 	seedService                seedServer
 	ticketBuyerService         ticketbuyerServer
+	ticketBuyerV2Service       ticketbuyerV2Server
 	agendaService              agendaServer
 	votingService              votingServer
 	messageVerificationService messageVerificationServer
@@ -229,6 +238,7 @@ func RegisterServices(server *grpc.Server) {
 	pb.RegisterWalletLoaderServiceServer(server, &loaderService)
 	pb.RegisterSeedServiceServer(server, &seedService)
 	pb.RegisterTicketBuyerServiceServer(server, &ticketBuyerService)
+	pb.RegisterTicketBuyerV2ServiceServer(server, &ticketBuyerV2Service)
 	pb.RegisterAgendaServiceServer(server, &agendaService)
 	pb.RegisterVotingServiceServer(server, &votingService)
 	pb.RegisterMessageVerificationServiceServer(server, &messageVerificationService)
@@ -241,6 +251,7 @@ var serviceMap = map[string]interface{}{
 	"walletrpc.WalletLoaderService":        &loaderService,
 	"walletrpc.SeedService":                &seedService,
 	"walletrpc.TicketBuyerService":         &ticketBuyerService,
+	"walletrpc.TicketBuyerV2Service":       &ticketBuyerV2Service,
 	"walletrpc.AgendaService":              &agendaService,
 	"walletrpc.VotingService":              &votingService,
 	"walletrpc.MessageVerificationService": &messageVerificationService,
@@ -580,13 +591,15 @@ func (s *walletServer) ImportScript(ctx context.Context,
 			"The script is not redeemable by the wallet")
 	}
 
-	lock := make(chan time.Time, 1)
-	defer func() {
-		lock <- time.Time{} // send matters, not the value
-	}()
-	err = s.wallet.Unlock(req.Passphrase, lock)
-	if err != nil {
-		return nil, translateError(err)
+	if !s.wallet.Manager.WatchingOnly() {
+		lock := make(chan time.Time, 1)
+		defer func() {
+			lock <- time.Time{} // send matters, not the value
+		}()
+		err = s.wallet.Unlock(req.Passphrase, lock)
+		if err != nil {
+			return nil, translateError(err)
+		}
 	}
 
 	if req.ScanFrom < 0 {
@@ -710,7 +723,94 @@ func (s *walletServer) StakeInfo(ctx context.Context, req *pb.StakeInfoRequest) 
 		Revoked:       si.Revoked,
 		Expired:       si.Expired,
 		TotalSubsidy:  int64(si.TotalSubsidy),
+		Unspent:       si.Unspent,
 	}, nil
+}
+
+// scriptChangeSource is a ChangeSource which is used to
+// receive all correlated previous input value.
+type scriptChangeSource struct {
+	version uint16
+	script  []byte
+}
+
+func (src *scriptChangeSource) Script() ([]byte, uint16, error) {
+	return src.script, src.version, nil
+}
+
+func (src *scriptChangeSource) ScriptSize() int {
+	return len(src.script)
+}
+
+func makeScriptChangeSource(address string, version uint16) (*scriptChangeSource, error) {
+	destinationAddress, err := pfcutil.DecodeAddress(address)
+	if err != nil {
+		return nil, err
+	}
+
+	script, err := txscript.PayToAddrScript(destinationAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	source := &scriptChangeSource{
+		version: version,
+		script:  script,
+	}
+
+	return source, nil
+}
+
+func (s *walletServer) SweepAccount(ctx context.Context, req *pb.SweepAccountRequest) (*pb.SweepAccountResponse, error) {
+	feePerKb := s.wallet.RelayFee()
+
+	// Use provided fee per Kb if specified.
+	if req.FeePerKb < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "%s",
+			"fee per kb argument cannot be negative")
+	}
+
+	if req.FeePerKb > 0 {
+		var err error
+		feePerKb, err = pfcutil.NewAmount(req.FeePerKb)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+	}
+
+	account, err := s.wallet.AccountNumber(req.SourceAccount)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	changeSource, err := makeScriptChangeSource(req.DestinationAddress,
+		txscript.DefaultScriptVersion)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	tx, err := s.wallet.NewUnsignedTransaction(nil, feePerKb, account,
+		int32(req.RequiredConfirmations), wallet.OutputSelectionAlgorithmAll,
+		changeSource)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	var txBuf bytes.Buffer
+	txBuf.Grow(tx.Tx.SerializeSize())
+	err = tx.Tx.Serialize(&txBuf)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	res := &pb.SweepAccountResponse{
+		UnsignedTransaction:       txBuf.Bytes(),
+		TotalPreviousOutputAmount: int64(tx.TotalInput),
+		TotalOutputAmount:         int64(h.SumOutputValues(tx.Tx.TxOut)),
+		EstimatedSignedSize:       uint32(tx.EstimatedSignedSerializeSize),
+	}
+
+	return res, nil
 }
 
 func (s *walletServer) BlockInfo(ctx context.Context, req *pb.BlockInfoRequest) (*pb.BlockInfoResponse, error) {
@@ -1091,6 +1191,41 @@ func (s *walletServer) GetTransactions(req *pb.GetTransactionsRequest,
 	return nil
 }
 
+func (s *walletServer) GetTicket(ctx context.Context, req *pb.GetTicketRequest) (*pb.GetTicketsResponse, error) {
+	ticketHash, err := chainhash.NewHash(req.TicketHash)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+
+	var chainClient *rpcclient.Client
+	if n, err := s.wallet.NetworkBackend(); err == nil {
+		// The chain client could be nil here if the network backend is not
+		// the consensus rpc client.  This is fine since the chain client is
+		// optional.
+		chainClient, _ = chain.RPCClientFromBackend(n)
+	}
+
+	var ticketSummary *wallet.TicketSummary
+	var blockHeader *wire.BlockHeader
+	if chainClient == nil {
+		ticketSummary, blockHeader, err = s.wallet.GetTicketInfo(ticketHash)
+	} else {
+		ticketSummary, blockHeader, err =
+			s.wallet.GetTicketInfoPrecise(chainClient, ticketHash)
+	}
+
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	resp := &pb.GetTicketsResponse{
+		Ticket: marshalTicketDetails(ticketSummary),
+		Block:  marshalGetTicketBlockDetails(blockHeader),
+	}
+
+	return resp, nil
+}
+
 func (s *walletServer) GetTickets(req *pb.GetTicketsRequest,
 	server pb.WalletService_GetTicketsServer) error {
 
@@ -1299,6 +1434,7 @@ func (s *walletServer) SignTransactions(ctx context.Context, req *pb.SignTransac
 	}
 
 	resp := pb.SignTransactionsResponse{}
+	resp.Transactions = make([]*pb.SignTransactionsResponse_SignedTransaction, 0, len(req.Transactions))
 	for _, unsignedTx := range req.Transactions {
 		var tx wire.MsgTx
 		err := tx.Deserialize(bytes.NewReader(unsignedTx.SerializedTransaction))
@@ -1696,7 +1832,9 @@ func (s *walletServer) ValidateAddress(ctx context.Context, req *pb.ValidateAddr
 		if err != nil {
 			return nil, err
 		}
-		result.PubKeyAddr = pubKeyAddr.EncodeAddress()
+		result.PubKeyAddr = pubKeyAddr.String()
+		result.IsInternal = ma.Internal()
+		result.Index = ma.Index()
 
 	case udb.ManagedScriptAddress:
 		result.IsScript = true
@@ -2020,6 +2158,14 @@ func (s *loaderServer) checkReady() bool {
 	return atomic.LoadUint32(&s.ready) != 0
 }
 
+// StartTicketBuyerV2Service starts the TicketBuyerV2Service.
+func StartTicketBuyerV2Service(server *grpc.Server, loader *loader.Loader) {
+	ticketBuyerV2Service.loader = loader
+	if atomic.SwapUint32(&ticketBuyerV2Service.ready, 1) != 0 {
+		panic("service already started")
+	}
+}
+
 // StartTicketBuyerService starts the TicketBuyerService.
 func StartTicketBuyerService(server *grpc.Server, loader *loader.Loader, tbCfg *ticketbuyer.Config) {
 	ticketBuyerService.loader = loader
@@ -2029,7 +2175,72 @@ func StartTicketBuyerService(server *grpc.Server, loader *loader.Loader, tbCfg *
 	}
 }
 
-func (t *ticketbuyerServer) checkReady() bool {
+// StartTicketBuyer starts the automatic ticket buyer for the v2 service.
+func (t *ticketbuyerV2Server) RunTicketBuyer(req *pb.RunTicketBuyerRequest, svr pb.TicketBuyerV2Service_RunTicketBuyerServer) error {
+	wallet, ok := t.loader.LoadedWallet()
+	if !ok {
+		return status.Errorf(codes.FailedPrecondition, "Wallet has not been loaded")
+	}
+	params := wallet.ChainParams()
+
+	// Confirm validity of provided voting addresses and pool addresses.
+	var votingAddress pfcutil.Address
+	var err error
+	if req.VotingAddress != "" {
+		votingAddress, err = decodeAddress(req.VotingAddress, params)
+		if err != nil {
+			return err
+		}
+	}
+	var poolAddress pfcutil.Address
+	if req.PoolAddress != "" {
+		poolAddress, err = decodeAddress(req.PoolAddress, params)
+		if err != nil {
+			return err
+		}
+	}
+
+	if req.BalanceToMaintain < 0 {
+		return status.Errorf(codes.InvalidArgument, "Negative balance to maintain given")
+	}
+
+	tb := tbv2.New(wallet)
+
+	// Set ticketbuyerV2 config
+	tb.AccessConfig(func(c *tbv2.Config) {
+		c.Account = req.Account
+		c.VotingAccount = req.VotingAccount
+		c.Maintain = pfcutil.Amount(req.BalanceToMaintain)
+		c.VotingAddr = votingAddress
+		c.PoolFeeAddr = poolAddress
+		c.PoolFees = req.PoolFees
+	})
+
+	lock := make(chan time.Time, 1)
+
+	lockWallet := func() {
+		lock <- time.Time{}
+		zero.Bytes(req.Passphrase)
+	}
+
+	err = wallet.Unlock(req.Passphrase, lock)
+	if err != nil {
+		return translateError(err)
+	}
+	defer lockWallet()
+
+	err = tb.Run(svr.Context(), req.Passphrase)
+	if err != nil {
+		if svr.Context().Err() != nil {
+			return status.Errorf(codes.Canceled, "TicketBuyerV2 instance canceled, account number: %v", req.Account)
+		}
+		return status.Errorf(codes.Unknown, "TicketBuyerV2 instance errored: %v", err)
+	}
+
+	return nil
+}
+
+func (t *ticketbuyerV2Server) checkReady() bool {
 	return atomic.LoadUint32(&t.ready) != 0
 }
 
@@ -2344,6 +2555,190 @@ func (s *loaderServer) FetchMissingCFilters(ctx context.Context, req *pb.FetchMi
 	return &pb.FetchMissingCFiltersResponse{}, nil
 }
 
+func (s *loaderServer) RpcSync(req *pb.RpcSyncRequest, svr pb.WalletLoaderService_RpcSyncServer) error {
+	defer zero.Bytes(req.Password)
+
+	// Error if the wallet is already syncing with the network.
+	wallet, walletLoaded := s.loader.LoadedWallet()
+	if walletLoaded {
+		_, err := wallet.NetworkBackend()
+		if err == nil {
+			return status.Errorf(codes.FailedPrecondition, "wallet is loaded and already synchronizing")
+		}
+	}
+
+	if req.DiscoverAccounts && len(req.PrivatePassphrase) == 0 {
+		return status.Errorf(codes.InvalidArgument, "private passphrase is required for discovering accounts")
+	}
+	var lockWallet func()
+	if req.DiscoverAccounts {
+		lock := make(chan time.Time, 1)
+		lockWallet = func() {
+			lock <- time.Time{}
+			zero.Bytes(req.PrivatePassphrase)
+		}
+		defer lockWallet()
+		err := wallet.Unlock(req.PrivatePassphrase, lock)
+		if err != nil {
+			return translateError(err)
+		}
+	}
+
+	s.mu.Lock()
+	chainClient := s.rpcClient
+	s.mu.Unlock()
+
+	// If the rpcClient is already set, you can just use that instead of attempting a new connection.
+	if chainClient == nil {
+		networkAddress, err := cfgutil.NormalizeAddress(req.NetworkAddress,
+			s.activeNet.JSONRPCClientPort)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "Network address is ill-formed: %v", err)
+		}
+		chainClient, err = chain.NewRPCClient(s.activeNet.Params, networkAddress, req.Username,
+			string(req.Password), req.Certificate, len(req.Certificate) == 0)
+		if err != nil {
+			return translateError(err)
+		}
+
+		err = chainClient.Start(svr.Context(), false)
+		if err != nil {
+			if err == rpcclient.ErrInvalidAuth {
+				return status.Errorf(codes.InvalidArgument, "Invalid RPC credentials: %v", err)
+			}
+			if errors.Match(errors.E(context.Canceled), err) {
+				return status.Errorf(codes.Canceled, "Wallet synchronization canceled: %v", err)
+			}
+			return status.Errorf(codes.Unavailable, "Connection to RPC server failed: %v", err)
+		}
+		s.mu.Lock()
+		s.rpcClient = chainClient
+		s.mu.Unlock()
+	}
+
+	n := chain.BackendFromRPCClient(chainClient.Client)
+	s.loader.SetNetworkBackend(n)
+	wallet.SetNetworkBackend(n)
+
+	// Disassociate the RPC client from all subsystems until reconnection
+	// occurs.
+	defer wallet.SetNetworkBackend(nil)
+	defer s.loader.SetNetworkBackend(nil)
+	defer s.loader.StopTicketPurchase()
+
+	ntfns := &chain.Notifications{
+		Synced: func(sync bool) {
+			resp := &pb.RpcSyncResponse{}
+			resp.Synced = sync
+			if sync {
+				resp.NotificationType = pb.SyncNotificationType_SYNCED
+			} else {
+				resp.NotificationType = pb.SyncNotificationType_UNSYNCED
+			}
+			_ = svr.Send(resp)
+		},
+		FetchMissingCFiltersStarted: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		FetchMissingCFiltersProgress: func(missingCFitlersStart, missingCFitlersEnd int32) {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_PROGRESS,
+				FetchMissingCfilters: &pb.FetchMissingCFiltersNotification{
+					FetchedCfiltersStartHeight: missingCFitlersStart,
+					FetchedCfiltersEndHeight:   missingCFitlersEnd,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		FetchMissingCFiltersFinished: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_FINISHED,
+			}
+			_ = svr.Send(resp)
+		},
+		FetchHeadersStarted: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_HEADERS_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		FetchHeadersProgress: func(fetchedHeadersCount int32, lastHeaderTime int64) {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_HEADERS_PROGRESS,
+				FetchHeaders: &pb.FetchHeadersNotification{
+					FetchedHeadersCount: fetchedHeadersCount,
+					LastHeaderTime:      lastHeaderTime,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		FetchHeadersFinished: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_HEADERS_FINISHED,
+			}
+			_ = svr.Send(resp)
+		},
+		DiscoverAddressesStarted: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_DISCOVER_ADDRESSES_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		DiscoverAddressesFinished: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_DISCOVER_ADDRESSES_FINISHED,
+			}
+
+			// Lock the wallet after the first time discovered while also
+			// discovering accounts.
+			if lockWallet != nil {
+				lockWallet()
+				lockWallet = nil
+			}
+			_ = svr.Send(resp)
+		},
+		RescanStarted: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_RESCAN_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		RescanProgress: func(rescannedThrough int32) {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_RESCAN_PROGRESS,
+				RescanProgress: &pb.RescanProgressNotification{
+					RescannedThrough: rescannedThrough,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		RescanFinished: func() {
+			resp := &pb.RpcSyncResponse{
+				NotificationType: pb.SyncNotificationType_RESCAN_FINISHED,
+			}
+			_ = svr.Send(resp)
+		},
+	}
+	syncer := chain.NewRPCSyncer(wallet, chainClient)
+	syncer.SetNotifications(ntfns)
+
+	// Run wallet synchronization until it is cancelled or errors.  If the
+	// context was cancelled, return immediately instead of trying to
+	// reconnect.
+	err := syncer.Run(svr.Context(), true)
+	if err != nil {
+		if svr.Context().Err() != nil {
+			return status.Errorf(codes.Canceled, "Wallet synchronization canceled: %v", err)
+		}
+		return status.Errorf(codes.Unknown, "Wallet synchronization stopped: %v", err)
+	}
+
+	return nil
+}
+
 func (s *loaderServer) SpvSync(req *pb.SpvSyncRequest, svr pb.WalletLoaderService_SpvSyncServer) error {
 	wallet, ok := s.loader.LoadedWallet()
 	if !ok {
@@ -2360,6 +2755,7 @@ func (s *loaderServer) SpvSync(req *pb.SpvSyncRequest, svr pb.WalletLoaderServic
 			lock <- time.Time{}
 			zero.Bytes(req.PrivatePassphrase)
 		}
+		defer lockWallet()
 		err := wallet.Unlock(req.PrivatePassphrase, lock)
 		if err != nil {
 			return translateError(err)
@@ -2371,18 +2767,117 @@ func (s *loaderServer) SpvSync(req *pb.SpvSyncRequest, svr pb.WalletLoaderServic
 
 	ntfns := &spv.Notifications{
 		Synced: func(sync bool) {
-			resp := &pb.SpvSyncResponse{Synced: sync}
+			resp := &pb.SpvSyncResponse{}
+			resp.Synced = sync
+			if sync {
+				resp.NotificationType = pb.SyncNotificationType_SYNCED
+			} else {
+				resp.NotificationType = pb.SyncNotificationType_UNSYNCED
+			}
+			_ = svr.Send(resp)
+		},
+		PeerConnected: func(peerCount int32, addr string) {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_PEER_CONNECTED,
+				PeerInformation: &pb.PeerNotification{
+					PeerCount: peerCount,
+					Address:   addr,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		PeerDisconnected: func(peerCount int32, addr string) {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_PEER_DISCONNECTED,
+				PeerInformation: &pb.PeerNotification{
+					PeerCount: peerCount,
+					Address:   addr,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		FetchMissingCFiltersStarted: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		FetchMissingCFiltersProgress: func(missingCFitlersStart, missingCFitlersEnd int32) {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_PROGRESS,
+				FetchMissingCfilters: &pb.FetchMissingCFiltersNotification{
+					FetchedCfiltersStartHeight: missingCFitlersStart,
+					FetchedCfiltersEndHeight:   missingCFitlersEnd,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		FetchMissingCFiltersFinished: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_FINISHED,
+			}
+			_ = svr.Send(resp)
+		},
+		FetchHeadersStarted: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_HEADERS_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		FetchHeadersProgress: func(fetchedHeadersCount int32, lastHeaderTime int64) {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_HEADERS_PROGRESS,
+				FetchHeaders: &pb.FetchHeadersNotification{
+					FetchedHeadersCount: fetchedHeadersCount,
+					LastHeaderTime:      lastHeaderTime,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		FetchHeadersFinished: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_FETCHED_HEADERS_FINISHED,
+			}
+			_ = svr.Send(resp)
+		},
+		DiscoverAddressesStarted: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_DISCOVER_ADDRESSES_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		DiscoverAddressesFinished: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_DISCOVER_ADDRESSES_FINISHED,
+			}
 
-			// Lock the wallet after the first time synced while also
+			// Lock the wallet after the first time discovered while also
 			// discovering accounts.
-			if sync && lockWallet != nil {
+			if lockWallet != nil {
 				lockWallet()
 				lockWallet = nil
 			}
-
-			// TODO: Add some kind of logging here.  Do nothing with the error
-			// for now. Could be nice to see what happened, but not super
-			// important.
+			_ = svr.Send(resp)
+		},
+		RescanStarted: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_RESCAN_STARTED,
+			}
+			_ = svr.Send(resp)
+		},
+		RescanProgress: func(rescannedThrough int32) {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_RESCAN_PROGRESS,
+				RescanProgress: &pb.RescanProgressNotification{
+					RescannedThrough: rescannedThrough,
+				},
+			}
+			_ = svr.Send(resp)
+		},
+		RescanFinished: func() {
+			resp := &pb.SpvSyncResponse{
+				NotificationType: pb.SyncNotificationType_RESCAN_FINISHED,
+			}
 			_ = svr.Send(resp)
 		},
 	}
@@ -2402,6 +2897,9 @@ func (s *loaderServer) SpvSync(req *pb.SpvSyncRequest, svr pb.WalletLoaderServic
 
 	wallet.SetNetworkBackend(syncer)
 	s.loader.SetNetworkBackend(syncer)
+
+	defer wallet.SetNetworkBackend(nil)
+	defer s.loader.SetNetworkBackend(nil)
 
 	err := syncer.Run(svr.Context())
 	if err != nil {
@@ -2920,13 +3418,13 @@ func marshalDecodedTxInputs(mtx *wire.MsgTx) []*pb.DecodedTransaction_Input {
 		inputs[i] = &pb.DecodedTransaction_Input{
 			PreviousTransactionHash:  txIn.PreviousOutPoint.Hash[:],
 			PreviousTransactionIndex: txIn.PreviousOutPoint.Index,
-			Tree:               pb.DecodedTransaction_Input_TreeType(txIn.PreviousOutPoint.Tree),
-			Sequence:           txIn.Sequence,
-			AmountIn:           txIn.ValueIn,
-			BlockHeight:        txIn.BlockHeight,
-			BlockIndex:         txIn.BlockIndex,
-			SignatureScript:    txIn.SignatureScript,
-			SignatureScriptAsm: disbuf,
+			Tree:                     pb.DecodedTransaction_Input_TreeType(txIn.PreviousOutPoint.Tree),
+			Sequence:                 txIn.Sequence,
+			AmountIn:                 txIn.ValueIn,
+			BlockHeight:              txIn.BlockHeight,
+			BlockIndex:               txIn.BlockIndex,
+			SignatureScript:          txIn.SignatureScript,
+			SignatureScriptAsm:       disbuf,
 		}
 	}
 

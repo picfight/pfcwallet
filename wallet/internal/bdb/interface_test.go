@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // subTestFailError is used to signal that a sub test returned false.

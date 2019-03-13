@@ -12,7 +12,7 @@ import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
 	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 var basicWalletConfig = Config{

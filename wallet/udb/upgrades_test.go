@@ -19,7 +19,7 @@ import (
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/wire"
 	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 var dbUpgradeTests = [...]struct {

@@ -7,11 +7,11 @@ package chain
 import (
 	"context"
 	"encoding/hex"
-	"io"
+	"strings"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/gcs"
+	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
@@ -99,7 +99,7 @@ func (b *rpcBackend) GetHeaders(ctx context.Context, blockLocators []*chainhash.
 	headers := make([]*wire.BlockHeader, 0, len(r.Headers))
 	for _, hexHeader := range r.Headers {
 		header := new(wire.BlockHeader)
-		err := header.Deserialize(newHexReader(hexHeader))
+		err := header.Deserialize(hex.NewDecoder(strings.NewReader(hexHeader)))
 		if err != nil {
 			return nil, errors.E(op, errors.Encoding, err)
 		}
@@ -160,7 +160,7 @@ func (b *rpcBackend) Rescan(ctx context.Context, blocks []chainhash.Hash, r wall
 		txs := make([]*wire.MsgTx, 0, len(d.Transactions))
 		for _, txHex := range d.Transactions {
 			tx := new(wire.MsgTx)
-			err := tx.Deserialize(newHexReader(txHex))
+			err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txHex)))
 			if err != nil {
 				return errors.E(op, errors.Encoding, err)
 			}
@@ -190,29 +190,4 @@ func (b *rpcBackend) StakeDifficulty(ctx context.Context) (pfcutil.Amount, error
 
 func (b *rpcBackend) RPCClient() *rpcclient.Client {
 	return b.rpcClient
-}
-
-// hexReader implements io.Reader to read bytes from a hexadecimal string.
-// TODO: Replace with hex.NewDecoder (available since Go 1.10)
-type hexReader struct {
-	hex   string
-	index int
-}
-
-func newHexReader(s string) *hexReader {
-	return &hexReader{hex: s}
-}
-
-func (r *hexReader) Read(b []byte) (n int, err error) {
-	end := r.index + 2*len(b)
-	if end > len(r.hex) {
-		end = len(r.hex)
-	}
-	src := r.hex[r.index:end]
-	n, err = hex.Decode(b, []byte(src))
-	r.index += 2 * n
-	if err == nil && n == 0 {
-		return 0, io.EOF
-	}
-	return n, err
 }

@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/decred/slog"
+	flags "github.com/jessevdk/go-flags"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/internal/cfgutil"
@@ -24,8 +26,6 @@ import (
 	"github.com/picfight/pfcwallet/version"
 	"github.com/picfight/pfcwallet/wallet"
 	"github.com/picfight/pfcwallet/wallet/txrules"
-	"github.com/decred/slog"
-	flags "github.com/jessevdk/go-flags"
 )
 
 const (

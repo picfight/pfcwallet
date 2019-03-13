@@ -15,31 +15,23 @@ import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainec"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/mempool"
 	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/mempool"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
-	"github.com/picfight/pfcwallet/wallet/internal/walletdb"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // --------------------------------------------------------------------------------
 // Constants and simple functions
 
 const (
-	// singleInputTicketSize is the typical size of a normal P2PKH ticket
-	// in bytes when the ticket has one input, rounded up.
-	singleInputTicketSize = 300
-
-	// doubleInputTicketSize is the typical size of a normal P2PKH ticket
-	// in bytes when the ticket has two inputs, rounded up.
-	doubleInputTicketSize = 550
-
 	// defaultTicketFeeLimits is the default byte string for the default
 	// fee limits imposed on a ticket.
 	defaultTicketFeeLimits = 0x5800
@@ -382,6 +374,7 @@ func (w *Wallet) txToOutputsInternal(op errors.Op, outputs []*wire.TxOut, accoun
 	// To avoid a race between publishing a transaction and potentially opening
 	// a database view during PublishTransaction, the update must be committed
 	// before publishing the transaction to the network.
+	var watch []wire.OutPoint
 	err = walletdb.Update(w.db, func(dbtx walletdb.ReadWriteTx) error {
 		for _, up := range changeSourceUpdates {
 			err := up(dbtx)
@@ -392,7 +385,9 @@ func (w *Wallet) txToOutputsInternal(op errors.Op, outputs []*wire.TxOut, accoun
 
 		// TODO: this can be improved by not using the same codepath as notified
 		// relevant transactions, since this does a lot of extra work.
-		return w.processTransactionRecord(dbtx, rec, nil, nil)
+		var err error
+		watch, err = w.processTransactionRecord(dbtx, rec, nil, nil)
+		return err
 	})
 	if err != nil {
 		return nil, errors.E(op, err)
@@ -402,13 +397,19 @@ func (w *Wallet) txToOutputsInternal(op errors.Op, outputs []*wire.TxOut, accoun
 		return nil, errors.E(op, err)
 	}
 
-	// Watch for future address usage.
+	// Watch for future relevant transactions.
 	err = walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
 		return w.watchFutureAddresses(dbtx)
 	})
 	if err != nil {
 		log.Errorf("Failed to watch for future address usage after publishing "+
 			"transaction: %v", err)
+	}
+	if len(watch) > 0 {
+		err := n.LoadTxFilter(context.TODO(), false, nil, watch)
+		if err != nil {
+			log.Errorf("Failed to watch outpoints: %v", err)
+		}
 	}
 	return atx, nil
 }
@@ -456,10 +457,12 @@ func (w *Wallet) txToMultisigInternal(op errors.Op, dbtx walletdb.ReadWriteTx, a
 	// Add in some extra for fees. TODO In the future, make a better
 	// fee estimator.
 	var feeEstForTx pfcutil.Amount
-	switch {
-	case w.chainParams == &chaincfg.MainNetParams:
+	switch w.chainParams.Net {
+	case wire.MainNet:
 		feeEstForTx = 5e7
-	case w.chainParams == &chaincfg.TestNet2Params:
+	case 0x48e7a065: // testnet2
+		feeEstForTx = 5e7
+	case wire.TestNet3:
 		feeEstForTx = 5e7
 	default:
 		feeEstForTx = 3e4
@@ -478,9 +481,9 @@ func (w *Wallet) txToMultisigInternal(op errors.Op, dbtx walletdb.ReadWriteTx, a
 	}
 
 	msgtx := wire.NewMsgTx()
-	scriptSizes := []int{}
+	scriptSizes := make([]int, 0, len(eligible))
 	// Fill out inputs.
-	var forSigning []udb.Credit
+	forSigning := make([]udb.Credit, 0, len(eligible))
 	totalInput := pfcutil.Amount(0)
 	for _, e := range eligible {
 		txIn := wire.NewTxIn(&e.OutPoint, int64(e.Amount), nil)
@@ -670,9 +673,9 @@ func (w *Wallet) compressWalletInternal(op errors.Op, dbtx walletdb.ReadWriteTx,
 
 	// Add the txins using all the eligible outputs.
 	totalAdded := pfcutil.Amount(0)
-	scriptSizes := []int{}
+	scriptSizes := make([]int, 0, maxNumIns)
+	forSigning := make([]udb.Credit, 0, maxNumIns)
 	count := 0
-	var forSigning []udb.Credit
 	for _, e := range eligible {
 		if count >= maxNumIns {
 			break
@@ -941,22 +944,64 @@ func (w *Wallet) purchaseTickets(op errors.Op, req purchaseTicketRequest) ([]*ch
 		return nil, errors.E(op, errors.Invalid, "stakepool fee percent unset")
 	}
 
+	var stakeSubmissionPkScriptSize int
+
+	// The stake submission pkScript is tagged by an OP_SSTX.
+	switch req.ticketAddr.(type) {
+	case *pfcutil.AddressScriptHash:
+		stakeSubmissionPkScriptSize = txsizes.P2SHPkScriptSize + 1
+	case *pfcutil.AddressPubKeyHash, nil:
+		stakeSubmissionPkScriptSize = txsizes.P2PKHPkScriptSize + 1
+	default:
+		return nil, errors.E(op, errors.Invalid,
+			"ticket address must either be P2SH or P2PKH")
+	}
+
 	// Make sure that we have enough funds. Calculate different
 	// ticket required amounts depending on whether or not a
 	// pool output is needed. If the ticket fee increment is
 	// unset in the request, use the global ticket fee increment.
 	var neededPerTicket, ticketFee pfcutil.Amount
+	var estSize int
 	ticketFeeIncrement := req.ticketFee
 	if ticketFeeIncrement == 0 {
 		ticketFeeIncrement = w.TicketFeeIncrement()
 	}
+
 	if poolAddress == nil {
-		ticketFee = (ticketFeeIncrement * singleInputTicketSize) / 1000
-		neededPerTicket = ticketFee + ticketPrice
+		// A solo ticket has:
+		//   - a single input redeeming a P2PKH for the worst case size
+		//   - a P2PKH or P2SH stake submission output
+		//   - a ticket commitment output
+		//   - an OP_SSTXCHANGE tagged P2PKH or P2SH change output
+		//
+		//   NB: The wallet currently only supports P2PKH change addresses.
+		//   The network supports both P2PKH and P2SH change addresses however.
+		inSizes := []int{txsizes.RedeemP2PKHSigScriptSize}
+		outSizes := []int{stakeSubmissionPkScriptSize,
+			txsizes.TicketCommitmentScriptSize, txsizes.P2PKHPkScriptSize + 1}
+		estSize = txsizes.EstimateSerializeSizeFromScriptSizes(inSizes,
+			outSizes, 0)
 	} else {
-		ticketFee = (ticketFeeIncrement * doubleInputTicketSize) / 1000
-		neededPerTicket = ticketFee + ticketPrice
+		// A pool ticket has:
+		//   - two inputs redeeming a P2PKH for the worst case size
+		//   - a P2PKH or P2SH stake submission output
+		//   - two ticket commitment outputs
+		//   - two OP_SSTXCHANGE tagged P2PKH or P2SH change outputs
+		//
+		//   NB: The wallet currently only supports P2PKH change addresses.
+		//   The network supports both P2PKH and P2SH change addresses however.
+		inSizes := []int{txsizes.RedeemP2PKHSigScriptSize,
+			txsizes.RedeemP2PKHSigScriptSize}
+		outSizes := []int{stakeSubmissionPkScriptSize,
+			txsizes.TicketCommitmentScriptSize, txsizes.TicketCommitmentScriptSize,
+			txsizes.P2PKHPkScriptSize + 1, txsizes.P2PKHPkScriptSize + 1}
+		estSize = txsizes.EstimateSerializeSizeFromScriptSizes(inSizes,
+			outSizes, 0)
 	}
+
+	ticketFee = txrules.FeeForSerializeSize(ticketFeeIncrement, estSize)
+	neededPerTicket = ticketFee + ticketPrice
 
 	// If we need to calculate the amount for a pool fee percentage,
 	// do so now.
@@ -1032,8 +1077,9 @@ func (w *Wallet) purchaseTickets(op errors.Op, req purchaseTicketRequest) ([]*ch
 		return nil, err
 	}
 
-	// After tickets are created and published, watch for future addresses used
-	// by the split tx and any published tickets.
+	// After tickets are created and published, watch for future
+	// relevant transactions
+	var watchOutPoints []wire.OutPoint
 	defer func() {
 		err := walletdb.View(w.db, func(tx walletdb.ReadTx) error {
 			return w.watchFutureAddresses(tx)
@@ -1041,6 +1087,12 @@ func (w *Wallet) purchaseTickets(op errors.Op, req purchaseTicketRequest) ([]*ch
 		if err != nil {
 			log.Errorf("Failed to watch for future addresses after ticket "+
 				"purchases: %v", err)
+		}
+		if len(watchOutPoints) > 0 {
+			err := n.LoadTxFilter(context.TODO(), false, nil, watchOutPoints)
+			if err != nil {
+				log.Errorf("Failed to watch outpoints: %v", err)
+			}
 		}
 	}()
 
@@ -1170,7 +1222,9 @@ func (w *Wallet) purchaseTickets(op errors.Op, req purchaseTicketRequest) ([]*ch
 		}
 
 		err = walletdb.Update(w.db, func(dbtx walletdb.ReadWriteTx) error {
-			return w.processTransactionRecord(dbtx, rec, nil, nil)
+			watch, err := w.processTransactionRecord(dbtx, rec, nil, nil)
+			watchOutPoints = append(watchOutPoints, watch...)
+			return err
 		})
 		if err != nil {
 			return ticketHashes, errors.E(op, err)

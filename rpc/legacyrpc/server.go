@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/websocket"
+	"github.com/gorilla/websocket"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcwallet/errors"
