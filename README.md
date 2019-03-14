@@ -1,6 +1,11 @@
 pfcwallet
 =========
 
+[![Build Status](https://travis-ci.org/picfight/pfcwallet.png?branch=master)](https://travis-ci.org/picfight/pfcwallet)
+[![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/picfight/pfcwallet)
+[![Go Report Card](https://goreportcard.com/badge/github.com/picfight/pfcwallet)](https://goreportcard.com/report/github.com/picfight/pfcwallet)
+
 pfcwallet is a daemon handling PicFight wallet functionality.  All interaction
 with the wallet is performed over RPC.
 
