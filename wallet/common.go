@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The Decred developers
+// Copyright (c) 2017 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,8 +9,8 @@ import (
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcutil"
 )
 
 // Note: The following common types should never reference the Wallet type.
@@ -26,7 +27,7 @@ type BlockIdentity struct {
 // None returns whether there is no block described by the instance.  When
 // associated with a transaction, this indicates the transaction is unmined.
 func (b *BlockIdentity) None() bool {
-	// BUG: Because pfcwallet uses both 0 and -1 in various places to refer
+	// BUG: Because dcrwallet uses both 0 and -1 in various places to refer
 	// to an unmined transaction this must check against both and may not
 	// ever be usable to represent the genesis block.
 	return *b == BlockIdentity{Height: -1} || *b == BlockIdentity{}
@@ -40,7 +41,6 @@ type OutputKind byte
 const (
 	OutputKindNormal OutputKind = iota
 	OutputKindCoinbase
-	OutputKindStakebase // not returned by all APIs yet
 )
 
 // TransactionOutput describes an output that was or is at least partially

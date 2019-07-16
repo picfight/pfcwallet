@@ -1,37 +1,44 @@
 // Copyright (c) 2016 The btcsuite developers
-// Copyright (c) 2016 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+// Package txrules provides transaction rules that should be followed by
+// transaction authors for wide mempool acceptance and quick mining.
 package txrules
 
 import (
-	"github.com/picfight/pfcd/pfcutil"
+	"errors"
+
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/errors"
-	h "github.com/picfight/pfcwallet/internal/helpers"
+	"github.com/picfight/pfcutil"
 )
 
 // DefaultRelayFeePerKb is the default minimum relay fee policy for a mempool.
-const DefaultRelayFeePerKb pfcutil.Amount = 1e4
+const DefaultRelayFeePerKb pfcutil.Amount = 1e3
+
+// GetDustThreshold is used to define the amount below which output will be
+// determined as dust. Threshold is determined as 3 times the relay fee.
+func GetDustThreshold(scriptSize int, relayFeePerKb pfcutil.Amount) pfcutil.Amount {
+	// Calculate the total (estimated) cost to the network.  This is
+	// calculated using the serialize size of the output plus the serial
+	// size of a transaction input which redeems it.  The output is assumed
+	// to be compressed P2PKH as this is the most common script type.  Use
+	// the average size of a compressed P2PKH redeem input (148) rather than
+	// the largest possible (txsizes.RedeemP2PKHInputSize).
+	totalSize := 8 + wire.VarIntSerializeSize(uint64(scriptSize)) +
+		scriptSize + 148
+
+	byteFee := relayFeePerKb / 1000
+	relayFee := pfcutil.Amount(totalSize) * byteFee
+	return 3 * relayFee
+}
 
 // IsDustAmount determines whether a transaction output value and script length would
 // cause the output to be considered dust.  Transactions with dust outputs are
 // not standard and are rejected by mempools with default policies.
 func IsDustAmount(amount pfcutil.Amount, scriptSize int, relayFeePerKb pfcutil.Amount) bool {
-	// Calculate the total (estimated) cost to the network.  This is
-	// calculated using the serialize size of the output plus the serial
-	// size of a transaction input which redeems it.  The output is assumed
-	// to be compressed P2PKH as this is the most common script type.  Use
-	// the average size of a compressed P2PKH redeem input (165) rather than
-	// the largest possible (txsizes.RedeemP2PKHInputSize).
-	totalSize := 8 + 2 + wire.VarIntSerializeSize(uint64(scriptSize)) +
-		scriptSize + 165
-
-	// Dust is defined as an output value where the total cost to the network
-	// (output size + input size) is greater than 1/3 of the relay fee.
-	return int64(amount)*1000/(3*int64(totalSize)) < int64(relayFeePerKb)
+	return amount < GetDustThreshold(scriptSize, relayFeePerKb)
 }
 
 // IsDustOutput determines whether a transaction output is considered dust.
@@ -39,12 +46,12 @@ func IsDustAmount(amount pfcutil.Amount, scriptSize int, relayFeePerKb pfcutil.A
 // with default policies.
 func IsDustOutput(output *wire.TxOut, relayFeePerKb pfcutil.Amount) bool {
 	// Unspendable outputs which solely carry data are not checked for dust.
-	if txscript.GetScriptClass(output.Version, output.PkScript) == txscript.NullDataTy {
+	if txscript.GetScriptClass(output.PkScript) == txscript.NullDataTy {
 		return false
 	}
 
 	// All other unspendable outputs are considered dust.
-	if txscript.IsUnspendable(output.Value, output.PkScript) {
+	if txscript.IsUnspendable(output.PkScript) {
 		return true
 	}
 
@@ -52,18 +59,24 @@ func IsDustOutput(output *wire.TxOut, relayFeePerKb pfcutil.Amount) bool {
 		relayFeePerKb)
 }
 
+// Transaction rule violations
+var (
+	ErrAmountNegative   = errors.New("transaction output amount is negative")
+	ErrAmountExceedsMax = errors.New("transaction output amount exceeds maximum value")
+	ErrOutputIsDust     = errors.New("transaction output is dust")
+)
+
 // CheckOutput performs simple consensus and policy tests on a transaction
-// output.  Returns with errors.Invalid if output violates consensus rules, and
-// errors.Policy if the output violates a non-consensus policy.
+// output.
 func CheckOutput(output *wire.TxOut, relayFeePerKb pfcutil.Amount) error {
 	if output.Value < 0 {
-		return errors.E(errors.Invalid, "transaction output amount is negative")
+		return ErrAmountNegative
 	}
-	if output.Value > pfcutil.MaxAmount {
-		return errors.E(errors.Invalid, "transaction output amount exceeds maximum value")
+	if output.Value > pfcutil.MaxSatoshi {
+		return ErrAmountExceedsMax
 	}
 	if IsDustOutput(output, relayFeePerKb) {
-		return errors.E(errors.Policy, "transaction output is dust")
+		return ErrOutputIsDust
 	}
 	return nil
 }
@@ -77,23 +90,9 @@ func FeeForSerializeSize(relayFeePerKb pfcutil.Amount, txSerializeSize int) pfcu
 		fee = relayFeePerKb
 	}
 
-	if fee < 0 || fee > pfcutil.MaxAmount {
-		fee = pfcutil.MaxAmount
+	if fee < 0 || fee > pfcutil.MaxSatoshi {
+		fee = pfcutil.MaxSatoshi
 	}
 
 	return fee
-}
-
-// PaysHighFees checks whether the signed transaction pays insanely high fees.
-// Transactons are defined to have a high fee if they have pay a fee rate that
-// is 1000 time higher than the default fee.
-func PaysHighFees(totalInput pfcutil.Amount, tx *wire.MsgTx) bool {
-	fee := totalInput - h.SumOutputValues(tx.TxOut)
-	if fee <= 0 {
-		// Impossible to determine
-		return false
-	}
-
-	maxFee := FeeForSerializeSize(1000*DefaultRelayFeePerKb, tx.SerializeSize())
-	return fee > maxFee
 }

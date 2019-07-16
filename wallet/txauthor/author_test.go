@@ -1,5 +1,4 @@
 // Copyright (c) 2016 The btcsuite developers
-// Copyright (c) 2016 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,26 +7,13 @@ package txauthor_test
 import (
 	"testing"
 
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/txauthor"
+	"github.com/picfight/pfcutil"
 	. "github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 
 	"github.com/picfight/pfcwallet/wallet/internal/txsizes"
 )
-
-type AuthorTestChangeSource struct{}
-
-func (src AuthorTestChangeSource) Script() ([]byte, uint16, error) {
-	// Only length matters for these tests.
-	return make([]byte, txsizes.P2PKHPkScriptSize), 0, nil
-}
-
-func (src AuthorTestChangeSource) ScriptSize() int {
-	return txsizes.P2PKHPkScriptSize
-}
 
 func p2pkhOutputs(amounts ...pfcutil.Amount) []*wire.TxOut {
 	v := make([]*wire.TxOut, 0, len(amounts))
@@ -42,24 +28,17 @@ func makeInputSource(unspents []*wire.TxOut) InputSource {
 	// Return outputs in order.
 	currentTotal := pfcutil.Amount(0)
 	currentInputs := make([]*wire.TxIn, 0, len(unspents))
-	redeemScriptSizes := make([]int, 0, len(unspents))
-	f := func(target pfcutil.Amount) (*InputDetail, error) {
+	currentInputValues := make([]pfcutil.Amount, 0, len(unspents))
+	f := func(target pfcutil.Amount) (pfcutil.Amount, []*wire.TxIn, []pfcutil.Amount, [][]byte, error) {
 		for currentTotal < target && len(unspents) != 0 {
 			u := unspents[0]
 			unspents = unspents[1:]
-			nextInput := wire.NewTxIn(&wire.OutPoint{}, u.Value, nil)
+			nextInput := wire.NewTxIn(&wire.OutPoint{}, nil, nil)
 			currentTotal += pfcutil.Amount(u.Value)
 			currentInputs = append(currentInputs, nextInput)
-			redeemScriptSizes = append(redeemScriptSizes, txsizes.RedeemP2PKHSigScriptSize)
+			currentInputValues = append(currentInputValues, pfcutil.Amount(u.Value))
 		}
-
-		inputDetail := txauthor.InputDetail{
-			Amount:            currentTotal,
-			Inputs:            currentInputs,
-			Scripts:           make([][]byte, len(currentInputs)),
-			RedeemScriptSizes: redeemScriptSizes,
-		}
-		return &inputDetail, nil
+		return currentTotal, currentInputs, currentInputValues, make([][]byte, len(currentInputs)), nil
 	}
 	return InputSource(f)
 }
@@ -84,7 +63,7 @@ func TestNewUnsignedTransaction(t *testing.T) {
 			Outputs:        p2pkhOutputs(1e6),
 			RelayFee:       1e3,
 			ChangeAmount: 1e8 - 1e6 - txrules.FeeForSerializeSize(1e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(1e6), txsizes.P2PKHPkScriptSize)),
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(1e6), true)),
 			InputCount: 1,
 		},
 		2: {
@@ -92,7 +71,7 @@ func TestNewUnsignedTransaction(t *testing.T) {
 			Outputs:        p2pkhOutputs(1e6),
 			RelayFee:       1e4,
 			ChangeAmount: 1e8 - 1e6 - txrules.FeeForSerializeSize(1e4,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(1e6), txsizes.P2PKHPkScriptSize)),
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(1e6), true)),
 			InputCount: 1,
 		},
 		3: {
@@ -100,7 +79,7 @@ func TestNewUnsignedTransaction(t *testing.T) {
 			Outputs:        p2pkhOutputs(1e6, 1e6, 1e6),
 			RelayFee:       1e4,
 			ChangeAmount: 1e8 - 3e6 - txrules.FeeForSerializeSize(1e4,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(1e6, 1e6, 1e6), txsizes.P2PKHPkScriptSize)),
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(1e6, 1e6, 1e6), true)),
 			InputCount: 1,
 		},
 		4: {
@@ -108,43 +87,43 @@ func TestNewUnsignedTransaction(t *testing.T) {
 			Outputs:        p2pkhOutputs(1e6, 1e6, 1e6),
 			RelayFee:       2.55e3,
 			ChangeAmount: 1e8 - 3e6 - txrules.FeeForSerializeSize(2.55e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(1e6, 1e6, 1e6), txsizes.P2PKHPkScriptSize)),
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(1e6, 1e6, 1e6), true)),
 			InputCount: 1,
 		},
 
-		// Test dust thresholds (603 for a 1e3 relay fee).
+		// Test dust thresholds (546 for a 1e3 relay fee).
 		5: {
 			UnspentOutputs: p2pkhOutputs(1e8),
-			Outputs: p2pkhOutputs(1e8 - 602 - txrules.FeeForSerializeSize(1e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(0), txsizes.P2PKHPkScriptSize))),
+			Outputs: p2pkhOutputs(1e8 - 545 - txrules.FeeForSerializeSize(1e3,
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(0), true))),
 			RelayFee:     1e3,
-			ChangeAmount: 0,
+			ChangeAmount: 545,
 			InputCount:   1,
 		},
 		6: {
 			UnspentOutputs: p2pkhOutputs(1e8),
-			Outputs: p2pkhOutputs(1e8 - 603 - txrules.FeeForSerializeSize(1e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(0), txsizes.P2PKHPkScriptSize))),
+			Outputs: p2pkhOutputs(1e8 - 546 - txrules.FeeForSerializeSize(1e3,
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(0), true))),
 			RelayFee:     1e3,
-			ChangeAmount: 603,
+			ChangeAmount: 546,
 			InputCount:   1,
 		},
 
-		// Test dust thresholds (1537.65 for a 2.55e3 relay fee).
+		// Test dust thresholds (1392.3 for a 2.55e3 relay fee).
 		7: {
 			UnspentOutputs: p2pkhOutputs(1e8),
-			Outputs: p2pkhOutputs(1e8 - 1537 - txrules.FeeForSerializeSize(2.55e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(0), txsizes.P2PKHPkScriptSize))),
+			Outputs: p2pkhOutputs(1e8 - 1392 - txrules.FeeForSerializeSize(2.55e3,
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(0), true))),
 			RelayFee:     2.55e3,
-			ChangeAmount: 0,
+			ChangeAmount: 1392,
 			InputCount:   1,
 		},
 		8: {
 			UnspentOutputs: p2pkhOutputs(1e8),
-			Outputs: p2pkhOutputs(1e8 - 1538 - txrules.FeeForSerializeSize(2.55e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(0), txsizes.P2PKHPkScriptSize))),
+			Outputs: p2pkhOutputs(1e8 - 1393 - txrules.FeeForSerializeSize(2.55e3,
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(0), true))),
 			RelayFee:     2.55e3,
-			ChangeAmount: 1538,
+			ChangeAmount: 1393,
 			InputCount:   1,
 		},
 
@@ -153,10 +132,10 @@ func TestNewUnsignedTransaction(t *testing.T) {
 		// serialize size for each).
 		9: {
 			UnspentOutputs: p2pkhOutputs(1e8, 1e8),
-			Outputs: p2pkhOutputs(1e8 - 603 - txrules.FeeForSerializeSize(1e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(0), txsizes.P2PKHPkScriptSize))),
+			Outputs: p2pkhOutputs(1e8 - 546 - txrules.FeeForSerializeSize(1e3,
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(0), true))),
 			RelayFee:     1e3,
-			ChangeAmount: 603,
+			ChangeAmount: 546,
 			InputCount:   1,
 		},
 
@@ -168,9 +147,9 @@ func TestNewUnsignedTransaction(t *testing.T) {
 		10: {
 			UnspentOutputs: p2pkhOutputs(1e8, 1e8),
 			Outputs: p2pkhOutputs(1e8 - 545 - txrules.FeeForSerializeSize(1e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(0), txsizes.P2PKHPkScriptSize))),
+				txsizes.EstimateVirtualSize(1, 0, 0, p2pkhOutputs(0), true))),
 			RelayFee:     1e3,
-			ChangeAmount: 0,
+			ChangeAmount: 545,
 			InputCount:   1,
 		},
 
@@ -180,7 +159,7 @@ func TestNewUnsignedTransaction(t *testing.T) {
 			Outputs:        p2pkhOutputs(1e8),
 			RelayFee:       1e3,
 			ChangeAmount: 1e8 - txrules.FeeForSerializeSize(1e3,
-				txsizes.EstimateSerializeSize([]int{txsizes.RedeemP2PKHSigScriptSize, txsizes.RedeemP2PKHSigScriptSize}, p2pkhOutputs(1e8), txsizes.P2PKHPkScriptSize)),
+				txsizes.EstimateVirtualSize(2, 0, 0, p2pkhOutputs(1e8), true)),
 			InputCount: 2,
 		},
 
@@ -195,22 +174,24 @@ func TestNewUnsignedTransaction(t *testing.T) {
 		},
 	}
 
-	var changeSource AuthorTestChangeSource
+	changeSource := func() ([]byte, error) {
+		// Only length matters for these tests.
+		return make([]byte, txsizes.P2WPKHPkScriptSize), nil
+	}
 
 	for i, test := range tests {
 		inputSource := makeInputSource(test.UnspentOutputs)
 		tx, err := NewUnsignedTransaction(test.Outputs, test.RelayFee, inputSource, changeSource)
-		if err != nil {
-			insufficientBalance := errors.Is(errors.InsufficientBalance, err)
-			if insufficientBalance != test.InputSourceError {
-				if !test.InputSourceError {
-					t.Errorf("Test %d: InsufficientBalance=%v expected %v", i, insufficientBalance, test.InputSourceError)
-				}
-				continue
-			} else if !insufficientBalance {
-				t.Errorf("Test %d: Unexpected error: %v", i, err)
-				continue
+		switch e := err.(type) {
+		case nil:
+		case InputSourceError:
+			if !test.InputSourceError {
+				t.Errorf("Test %d: Returned InputSourceError but expected "+
+					"change output with amount %v", i, test.ChangeAmount)
 			}
+			continue
+		default:
+			t.Errorf("Test %d: Unexpected error: %v", i, e)
 			continue
 		}
 		if tx.ChangeIndex < 0 {

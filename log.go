@@ -1,5 +1,4 @@
 // Copyright (c) 2013-2017 The btcsuite developers
-// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,23 +6,19 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/decred/slog"
+	"github.com/btcsuite/btclog"
 	"github.com/jrick/logrotate/rotator"
-	"github.com/picfight/pfcd/connmgr"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
+	"github.com/lightninglabs/neutrino"
+	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcwallet/chain"
-	"github.com/picfight/pfcwallet/loader"
-	"github.com/picfight/pfcwallet/p2p"
 	"github.com/picfight/pfcwallet/rpc/legacyrpc"
 	"github.com/picfight/pfcwallet/rpc/rpcserver"
-	"github.com/picfight/pfcwallet/spv"
-	"github.com/picfight/pfcwallet/ticketbuyer"
-	ticketbuyerv2 "github.com/picfight/pfcwallet/ticketbuyer/v2"
 	"github.com/picfight/pfcwallet/wallet"
-	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wtxmgr"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -32,7 +27,7 @@ type logWriter struct{}
 
 func (logWriter) Write(p []byte) (n int, err error) {
 	os.Stdout.Write(p)
-	logRotator.Write(p)
+	logRotatorPipe.Write(p)
 	return len(p), nil
 }
 
@@ -48,48 +43,45 @@ var (
 	// backendLog is the logging backend used to create all subsystem loggers.
 	// The backend must not be used before the log rotator has been initialized,
 	// or data races and/or nil pointer dereferences will occur.
-	backendLog = slog.NewBackend(logWriter{})
+	backendLog = btclog.NewBackend(logWriter{})
 
 	// logRotator is one of the logging outputs.  It should be closed on
 	// application shutdown.
 	logRotator *rotator.Rotator
 
-	log          = backendLog.Logger("PFCW")
-	loaderLog    = backendLog.Logger("LODR")
+	// logRotatorPipe is the write-end pipe for writing to the log rotator.  It
+	// is written to by the Write method of the logWriter type.
+	logRotatorPipe *io.PipeWriter
+
+	log          = backendLog.Logger("BTCW")
 	walletLog    = backendLog.Logger("WLLT")
-	tkbyLog      = backendLog.Logger("TKBY")
-	syncLog      = backendLog.Logger("SYNC")
+	txmgrLog     = backendLog.Logger("TMGR")
+	chainLog     = backendLog.Logger("CHNS")
 	grpcLog      = backendLog.Logger("GRPC")
 	legacyRPCLog = backendLog.Logger("RPCS")
-	cmgrLog      = backendLog.Logger("CMGR")
+	btcnLog      = backendLog.Logger("BTCN")
 )
 
 // Initialize package-global logger variables.
 func init() {
-	loader.UseLogger(loaderLog)
 	wallet.UseLogger(walletLog)
-	udb.UseLogger(walletLog)
-	ticketbuyer.UseLogger(tkbyLog)
-	ticketbuyerv2.UseLogger(tkbyLog)
-	chain.UseLogger(syncLog)
-	pfcrpcclient.UseLogger(syncLog)
-	spv.UseLogger(syncLog)
-	p2p.UseLogger(syncLog)
+	wtxmgr.UseLogger(txmgrLog)
+	chain.UseLogger(chainLog)
+	rpcclient.UseLogger(chainLog)
 	rpcserver.UseLogger(grpcLog)
 	legacyrpc.UseLogger(legacyRPCLog)
-	connmgr.UseLogger(cmgrLog)
+	neutrino.UseLogger(btcnLog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
-var subsystemLoggers = map[string]slog.Logger{
-	"PFCW": log,
-	"LODR": loaderLog,
+var subsystemLoggers = map[string]btclog.Logger{
+	"BTCW": log,
 	"WLLT": walletLog,
-	"TKBY": tkbyLog,
-	"SYNC": syncLog,
+	"TMGR": txmgrLog,
+	"CHNS": chainLog,
 	"GRPC": grpcLog,
 	"RPCS": legacyRPCLog,
-	"CMGR": cmgrLog,
+	"BTCN": btcnLog,
 }
 
 // initLogRotator initializes the logging rotater to write logs to logFile and
@@ -102,13 +94,17 @@ func initLogRotator(logFile string) {
 		fmt.Fprintf(os.Stderr, "failed to create log directory: %v\n", err)
 		os.Exit(1)
 	}
-	r, err := rotator.New(logFile, 10*1024, false, 0)
+	r, err := rotator.New(logFile, 10*1024, false, 3)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create file rotator: %v\n", err)
 		os.Exit(1)
 	}
 
+	pr, pw := io.Pipe()
+	go r.Run(pr)
+
 	logRotator = r
+	logRotatorPipe = pw
 }
 
 // setLogLevel sets the logging level for provided subsystem.  Invalid
@@ -122,7 +118,7 @@ func setLogLevel(subsystemID string, logLevel string) {
 	}
 
 	// Defaults to info if the log level is invalid.
-	level, _ := slog.LevelFromString(logLevel)
+	level, _ := btclog.LevelFromString(logLevel)
 	logger.SetLevel(level)
 }
 
@@ -137,11 +133,11 @@ func setLogLevels(logLevel string) {
 	}
 }
 
-// fatalf logs a message, flushes the logger, and finally exit the process with
-// a non-zero return code.
-func fatalf(format string, args ...interface{}) {
-	log.Errorf(format, args...)
-	os.Stdout.Sync()
-	logRotator.Close()
-	os.Exit(1)
+// pickNoun returns the singular or plural form of a noun depending
+// on the count n.
+func pickNoun(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
 }

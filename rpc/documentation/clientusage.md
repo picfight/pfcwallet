@@ -19,7 +19,7 @@ pfcwallet itself.
 
 The rest of this document provides short examples of how to quickly get started
 by implementing a basic client that fetches the balance of the default account
-(account 0) from a testnet wallet listening on `localhost:19111` in several
+(account 0) from a testnet3 wallet listening on `localhost:18332` in several
 different languages:
 
 - [Go](#go)
@@ -57,7 +57,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcutil"
 )
 
 var certificateFile = filepath.Join(pfcutil.AppDataDir("pfcwallet", false), "rpc.cert")
@@ -68,7 +68,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	conn, err := grpc.Dial("localhost:19111", grpc.WithTransportCredentials(creds))
+	conn, err := grpc.Dial("localhost:18332", grpc.WithTransportCredentials(creds))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -163,7 +163,7 @@ auto main() -> int {
         .pem_root_certs = read_file(wallet_tls_cert_file),
     };
     auto creds = grpc::SslCredentials(cred_options);
-    auto channel = grpc::CreateChannel("localhost:19111", creds);
+    auto channel = grpc::CreateChannel("localhost:18332", creds);
     auto stub = walletrpc::WalletService::NewStub(channel);
 
     grpc::ClientContext context{};
@@ -177,7 +177,7 @@ auto main() -> int {
     if (!status.ok()) {
         std::cout << status.error_message() << std::endl;
     } else {
-        std::cout << "Spendable balance: " << response.spendable() << " atoms" << std::endl;
+        std::cout << "Spendable balance: " << response.spendable() << " Satoshis" << std::endl;
     }
 }
 ```
@@ -248,10 +248,10 @@ namespace Example
             // certificates (required by pfcwallet).
             Environment.SetEnvironmentVariable("GRPC_SSL_CIPHER_SUITES", "HIGH+ECDSA");
 
-            var walletAppData = Portability.LocalAppData(Environment.OSVersion.Platform, "Pfcwallet");
+            var walletAppData = Portability.LocalAppData(Environment.OSVersion.Platform, "Btcwallet");
             var walletTlsCertFile = Path.Combine(walletAppData, "rpc.cert");
             var cert = await FileUtils.ReadFileAsync(walletTlsCertFile);
-            var channel = new Channel("localhost:19111", new SslCredentials(cert));
+            var channel = new Channel("localhost:18332", new SslCredentials(cert));
             try
             {
                 var c = WalletService.NewClient(channel);
@@ -261,7 +261,7 @@ namespace Example
                     RequiredConfirmations = 1,
                 };
                 var balanceResponse = await c.BalanceAsync(balanceRequest);
-                Console.WriteLine($"Spendable balance: {balanceResponse.Spendable} atoms");
+                Console.WriteLine($"Spendable balance: {balanceResponse.Spendable} Satoshis");
             }
             finally
             {
@@ -326,8 +326,12 @@ namespace Example
 
 ## Node.js
 
-First, install the gRPC `npm` package, which includes a pre-compiled gRPC Core
-native library and the bindings for Node.js clients:
+First, install gRPC (either by building the latest source release, or
+by installing a gRPC binary development package through your operating
+system's package manager).  This is required to install the npm module
+as it wraps the native C library (gRPC Core) with C++ bindings.
+Installing the [grpc module](https://www.npmjs.com/package/grpc) to
+your project can then be done by executing:
 
 ```
 npm install grpc
@@ -353,30 +357,28 @@ var grpc = require('grpc');
 var protoDescriptor = grpc.load('./api.proto');
 var walletrpc = protoDescriptor.walletrpc;
 
-var certPath = '';
-if (os.platform() == 'win32') {
-  certPath = path.join(process.env.LOCALAPPDATA, 'Pfcwallet', 'rpc.cert');
-} else if (os.platform() == 'darwin') {
-  certPath = path.join(process.env.HOME, 'Library', 'Application Support',
-    'Pfcwallet', 'rpc.cert');
-} else {
-  certPath = path.join(process.env.HOME, '.pfcwallet', 'rpc.cert');
+var certPath = path.join(process.env.HOME, '.pfcwallet', 'rpc.cert');
+if (os.platform == 'win32') {
+    certPath = path.join(process.env.LOCALAPPDATA, 'Btcwallet', 'rpc.cert');
+} else if (os.platform == 'darwin') {
+    certPath = path.join(process.env.HOME, 'Library', 'Application Support',
+        'Btcwallet', 'rpc.cert');
 }
 
 var cert = fs.readFileSync(certPath);
 var creds = grpc.credentials.createSsl(cert);
-var client = new walletrpc.WalletService('localhost:19111', creds);
+var client = new walletrpc.WalletService('localhost:18332', creds);
 
 var request = {
-  account_number: 0,
-  required_confirmations: 1
+    account_number: 0,
+    required_confirmations: 1
 };
 client.balance(request, function(err, response) {
-  if (err) {
-    console.error(err);
-  } else {
-    console.log('Spendable balance:', response.spendable, 'atoms');
-  }
+    if (err) {
+        console.error(err);
+    } else {
+        console.log('Spendable balance:', response.spendable, 'Satoshis');
+    }
 });
 ```
 
@@ -384,12 +386,10 @@ client.balance(request, function(err, response) {
 
 **Note:** gRPC requires Python 2.7.
 
-First, install the gRPC `pip` package, which includes a pre-compiled gRPC Core
-native library and the bindings for Python clients:
-
-```
-pip install grpcio
-```
+After installing gRPC Core and Python development headers, `pip`
+should be used to install the `grpc` module and its dependencies.
+Full instructions for this procedure can be found
+[here](https://github.com/grpc/grpc/blob/master/src/python/README.md).
 
 Generate Python stubs from the `.proto`:
 
@@ -416,23 +416,22 @@ def main():
     # configured to use ECDSA TLS certificates (required by pfcwallet).
     os.environ['GRPC_SSL_CIPHER_SUITES'] = 'HIGH+ECDSA'
 
+    cert_file_path = os.path.join(os.environ['HOME'], '.pfcwallet', 'rpc.cert')
     if platform.system() == 'Windows':
-        cert_file_path = os.path.join(os.environ['LOCALAPPDATA'], "Pfcwallet", "rpc.cert")
+        cert_file_path = os.path.join(os.environ['LOCALAPPDATA'], "Btcwallet", "rpc.cert")
     elif platform.system() == 'Darwin':
         cert_file_path = os.path.join(os.environ['HOME'], 'Library', 'Application Support',
-                                      'Pfcwallet', 'rpc.cert')
-    else:
-        cert_file_path = os.path.join(os.environ['HOME'], '.pfcwallet', 'rpc.cert')
+                                      'Btcwallet', 'rpc.cert')
 
     with open(cert_file_path, 'r') as f:
         cert = f.read()
     creds = implementations.ssl_client_credentials(cert, None, None)
-    channel = implementations.secure_channel('localhost', 19111, creds)
+    channel = implementations.secure_channel('localhost', 18332, creds)
     stub = walletrpc.beta_create_WalletService_stub(channel)
 
     request = walletrpc.BalanceRequest(account_number = 0, required_confirmations = 1)
     response = stub.Balance(request, timeout)
-    print 'Spendable balance: %d atoms' % response.spendable
+    print 'Spendable balance: %d Satoshis' % response.spendable
 
 if __name__ == '__main__':
     main()

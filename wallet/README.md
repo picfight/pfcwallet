@@ -1,13 +1,17 @@
 wallet
 ======
 
+[![Build Status](https://travis-ci.org/picfight/pfcwallet.png?branch=master)]
+(https://travis-ci.org/picfight/pfcwallet)
+
 ## Feature Overview
 
 TODO: Flesh out this section
 
 ## Documentation
 
-[![GoDoc](https://godoc.org/github.com/picfight/pfcwallet/wallet?status.png)](http://godoc.org/github.com/picfight/pfcwallet/wallet)
+[![GoDoc](https://godoc.org/github.com/picfight/pfcwallet/wallet?status.png)]
+(http://godoc.org/github.com/picfight/pfcwallet/wallet)
 
 Full `go doc` style documentation for the project can be viewed online without
 installing this package by using the GoDoc site here:

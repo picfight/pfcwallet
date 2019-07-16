@@ -11,19 +11,16 @@ steps before changes to the server can be implemented.
   language
 
   The `protoc` tool is part of the Protocol Buffers project.  This can be
-  installed [from source](https://github.com/google/protobuf/blob/master/src/README.md),
+  installed [from source](https://github.com/google/protobuf/blob/master/INSTALL.txt),
   from an [official binary release](https://github.com/google/protobuf/releases),
   or through an operating system's package manager.
 
 - The gRPC `protoc` plugin for Go
 
-  This plugin is written in Go.  It is important to install the plugin from the
-  pfcwallet `vendor` repo to avoid incompatibilities between generated code and
-  the vendored copy of gRPC:
+  This plugin is written in Go and can be installed using `go get`:
 
   ```
-  cd vendor/github.com/golang/protobuf/protoc-gen-go
-  go install
+  go get github.com/golang/protobuf/protoc-gen-go
   ```
 
 - Knowledge of Protocol Buffers version 3 (proto3)

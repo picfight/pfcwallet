@@ -1,12 +1,13 @@
 // Copyright (c) 2015 The btcsuite developers
-// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package zero
+package zero_test
 
 import (
 	"testing"
+
+	. "github.com/picfight/pfcwallet/internal/zero"
 )
 
 var (

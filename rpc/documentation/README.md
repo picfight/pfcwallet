@@ -12,5 +12,5 @@ implementation:
 - [Client usage](./clientusage.md)
 - [Making API changes](./serverchanges.md)
 
-A legacy JSON-RPC server is also available, but documenting its usage
-it out of scope for these documents.
+A legacy RPC server based on the JSON-RPC API of Picfightcoin Core's wallet is also
+available, but documenting its usage is out of scope for these documents.

@@ -1,5 +1,4 @@
 pfcwallet
 vendor
-*~
-.vscode
+.idea
 \.idea/

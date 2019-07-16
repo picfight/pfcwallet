@@ -1,16 +1,14 @@
+// Copyright (c) 2016 The Decred developers
+// Copyright (c) 2017 The btcsuite developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package wallet
 
 import (
-	"time"
-
-	"github.com/picfight/pfcd/blockchain"
-	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/txauthor"
-	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
+	"github.com/picfight/pfcwallet/walletdb"
 )
 
 // OutputSelectionPolicy describes the rules for selecting an output from the
@@ -27,13 +25,12 @@ func (p *OutputSelectionPolicy) meetsRequiredConfs(txHeight, curHeight int32) bo
 // UnspentOutputs fetches all unspent outputs from the wallet that match rules
 // described in the passed policy.
 func (w *Wallet) UnspentOutputs(policy OutputSelectionPolicy) ([]*TransactionOutput, error) {
-	const op errors.Op = "wallet.UnspentOutputs"
 	var outputResults []*TransactionOutput
 	err := walletdb.View(w.db, func(tx walletdb.ReadTx) error {
 		addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
 		txmgrNs := tx.ReadBucket(wtxmgrNamespaceKey)
 
-		_, tipHeight := w.TxStore.MainChainTip(txmgrNs)
+		syncBlock := w.Manager.SyncedTo()
 
 		// TODO: actually stream outputs from the db instead of fetching
 		// all of them at once.
@@ -45,13 +42,12 @@ func (w *Wallet) UnspentOutputs(policy OutputSelectionPolicy) ([]*TransactionOut
 		for _, output := range outputs {
 			// Ignore outputs that haven't reached the required
 			// number of confirmations.
-			if !policy.meetsRequiredConfs(output.Height, tipHeight) {
+			if !policy.meetsRequiredConfs(output.Height, syncBlock.Height) {
 				continue
 			}
 
 			// Ignore outputs that are not controlled by the account.
-			_, addrs, _, err := txscript.ExtractPkScriptAddrs(
-				txscript.DefaultScriptVersion, output.PkScript,
+			_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.PkScript,
 				w.chainParams)
 			if err != nil || len(addrs) == 0 {
 				// Cannot determine which account this belongs
@@ -60,7 +56,7 @@ func (w *Wallet) UnspentOutputs(policy OutputSelectionPolicy) ([]*TransactionOut
 				// per output.
 				continue
 			}
-			outputAcct, err := w.Manager.AddrAccount(addrmgrNs, addrs[0])
+			_, outputAcct, err := w.Manager.AddrAccount(addrmgrNs, addrs[0])
 			if err != nil {
 				return err
 			}
@@ -78,10 +74,7 @@ func (w *Wallet) UnspentOutputs(policy OutputSelectionPolicy) ([]*TransactionOut
 			result := &TransactionOutput{
 				OutPoint: output.OutPoint,
 				Output: wire.TxOut{
-					Value: int64(output.Amount),
-					// TODO: version is bogus but there is
-					// only version 0 at time of writing.
-					Version:  txscript.DefaultScriptVersion,
+					Value:    int64(output.Amount),
 					PkScript: output.PkScript,
 				},
 				OutputKind:      outputSource,
@@ -93,74 +86,5 @@ func (w *Wallet) UnspentOutputs(policy OutputSelectionPolicy) ([]*TransactionOut
 
 		return nil
 	})
-	if err != nil {
-		return nil, errors.E(op, err)
-	}
-	return outputResults, nil
-}
-
-// SelectInputs selects transaction inputs to redeem unspent outputs stored in
-// the wallet.  It returns an input detail summary.
-func (w *Wallet) SelectInputs(targetAmount pfcutil.Amount, policy OutputSelectionPolicy) (inputDetail *txauthor.InputDetail, err error) {
-	const op errors.Op = "wallet.SelectInputs"
-	err = walletdb.View(w.db, func(tx walletdb.ReadTx) error {
-		addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
-		txmgrNs := tx.ReadBucket(wtxmgrNamespaceKey)
-		_, tipHeight := w.TxStore.MainChainTip(txmgrNs)
-
-		if policy.Account != udb.ImportedAddrAccount {
-			lastAcct, err := w.Manager.LastAccount(addrmgrNs)
-			if err != nil {
-				return err
-			}
-			if policy.Account > lastAcct {
-				return errors.E(errors.NotExist, "account not found")
-			}
-		}
-
-		sourceImpl := w.TxStore.MakeInputSource(txmgrNs, addrmgrNs, policy.Account,
-			policy.RequiredConfirmations, tipHeight)
-		var err error
-		inputDetail, err = sourceImpl.SelectInputs(targetAmount)
-		return err
-	})
-	if err != nil {
-		err = errors.E(op, err)
-	}
-	return inputDetail, err
-}
-
-// OutputInfo describes additional info about an output which can be queried
-// using an outpoint.
-type OutputInfo struct {
-	Received     time.Time
-	Amount       pfcutil.Amount
-	FromCoinbase bool
-}
-
-// OutputInfo queries the wallet for additional transaction output info
-// regarding an outpoint.
-func (w *Wallet) OutputInfo(out *wire.OutPoint) (OutputInfo, error) {
-	const op errors.Op = "wallet.OutputInfo"
-	var info OutputInfo
-	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
-		txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
-
-		txDetails, err := w.TxStore.TxDetails(txmgrNs, &out.Hash)
-		if err != nil {
-			return err
-		}
-		if out.Index >= uint32(len(txDetails.TxRecord.MsgTx.TxOut)) {
-			return errors.Errorf("transaction has no output %d", out.Index)
-		}
-
-		info.Received = txDetails.Received
-		info.Amount = pfcutil.Amount(txDetails.TxRecord.MsgTx.TxOut[out.Index].Value)
-		info.FromCoinbase = blockchain.IsCoinBaseTx(&txDetails.TxRecord.MsgTx)
-		return nil
-	})
-	if err != nil {
-		return info, errors.E(op, err)
-	}
-	return info, nil
+	return outputResults, err
 }

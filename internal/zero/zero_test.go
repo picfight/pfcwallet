@@ -1,16 +1,16 @@
 // Copyright (c) 2015 The btcsuite developers
-// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package zero
+package zero_test
 
 import (
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
 
-	"github.com/picfight/pfcwallet/errors"
+	. "github.com/picfight/pfcwallet/internal/zero"
 )
 
 func makeOneBytes(n int) []byte {
@@ -24,7 +24,7 @@ func makeOneBytes(n int) []byte {
 func checkZeroBytes(b []byte) error {
 	for i, v := range b {
 		if v != 0 {
-			return errors.Errorf("b[%d] = %d", i, v)
+			return fmt.Errorf("b[%d] = %d", i, v)
 		}
 	}
 	return nil
@@ -65,7 +65,7 @@ func TestBytes(t *testing.T) {
 func checkZeroWords(b []big.Word) error {
 	for i, v := range b {
 		if v != 0 {
-			return errors.Errorf("b[%d] = %d", i, v)
+			return fmt.Errorf("b[%d] = %d", i, v)
 		}
 	}
 	return nil

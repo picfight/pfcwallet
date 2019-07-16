@@ -1,5 +1,4 @@
 // Copyright (c) 2015-2016 The btcsuite developers
-// Copyright (c) 2016 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,20 +6,15 @@ package wallet
 
 import (
 	"bytes"
-	"context"
 	"sync"
 
-	"github.com/picfight/pfcd/blockchain"
-	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/hdkeychain"
-	"github.com/picfight/pfcd/pfcutil"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
+	"github.com/picfight/pfcutil"
+	"github.com/picfight/pfcwallet/waddrmgr"
+	"github.com/picfight/pfcwallet/walletdb"
+	"github.com/picfight/pfcwallet/wtxmgr"
 )
 
 // TODO: It would be good to send errors during notification creation to the rpc
@@ -38,24 +32,22 @@ import (
 // order wallet created them, but there is no guaranteed synchronization between
 // different clients.
 type NotificationServer struct {
-	transactions []chan *TransactionNotifications
-	// Coalesce transaction notifications since wallet previously did not add
-	// mined txs together.  Now it does and this can be rewritten.
-	currentTxNtfn     *TransactionNotifications
-	accountClients    []chan *AccountNotification
-	tipChangedClients []chan *MainTipChangedNotification
-	confClients       []*ConfirmationNotificationsClient
-	mu                sync.Mutex // Only protects registered clients
-	wallet            *Wallet    // smells like hacks
+	transactions   []chan *TransactionNotifications
+	currentTxNtfn  *TransactionNotifications // coalesce this since wallet does not add mined txs together
+	spentness      map[uint32][]chan *SpentnessNotifications
+	accountClients []chan *AccountNotification
+	mu             sync.Mutex // Only protects registered client channels
+	wallet         *Wallet    // smells like hacks
 }
 
 func newNotificationServer(wallet *Wallet) *NotificationServer {
 	return &NotificationServer{
-		wallet: wallet,
+		spentness: make(map[uint32][]chan *SpentnessNotifications),
+		wallet:    wallet,
 	}
 }
 
-func lookupInputAccount(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails, deb udb.DebitRecord) uint32 {
+func lookupInputAccount(dbtx walletdb.ReadTx, w *Wallet, details *wtxmgr.TxDetails, deb wtxmgr.DebitRecord) uint32 {
 	addrmgrNs := dbtx.ReadBucket(waddrmgrNamespaceKey)
 	txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
 
@@ -72,10 +64,10 @@ func lookupInputAccount(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails,
 		return 0
 	}
 	prevOut := prev.MsgTx.TxOut[prevOP.Index]
-	_, addrs, _, err := txscript.ExtractPkScriptAddrs(prevOut.Version, prevOut.PkScript, w.chainParams)
+	_, addrs, _, err := txscript.ExtractPkScriptAddrs(prevOut.PkScript, w.chainParams)
 	var inputAcct uint32
 	if err == nil && len(addrs) > 0 {
-		inputAcct, err = w.Manager.AddrAccount(addrmgrNs, addrs[0])
+		_, inputAcct, err = w.Manager.AddrAccount(addrmgrNs, addrs[0])
 	}
 	if err != nil {
 		log.Errorf("Cannot fetch account for previous output %v: %v", prevOP, err)
@@ -84,15 +76,14 @@ func lookupInputAccount(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails,
 	return inputAcct
 }
 
-func lookupOutputChain(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails,
-	cred udb.CreditRecord) (account uint32, internal bool, address pfcutil.Address,
-	amount int64, outputScript []byte) {
+func lookupOutputChain(dbtx walletdb.ReadTx, w *Wallet, details *wtxmgr.TxDetails,
+	cred wtxmgr.CreditRecord) (account uint32, internal bool) {
 
 	addrmgrNs := dbtx.ReadBucket(waddrmgrNamespaceKey)
 
 	output := details.MsgTx.TxOut[cred.Index]
-	_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.Version, output.PkScript, w.chainParams)
-	var ma udb.ManagedAddress
+	_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.PkScript, w.chainParams)
+	var ma waddrmgr.ManagedAddress
 	if err == nil && len(addrs) > 0 {
 		ma, err = w.Manager.Address(addrmgrNs, addrs[0])
 	}
@@ -101,18 +92,14 @@ func lookupOutputChain(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails,
 	} else {
 		account = ma.Account()
 		internal = ma.Internal()
-		address = ma.Address()
-		amount = output.Value
-		outputScript = output.PkScript
 	}
 	return
 }
 
-func makeTxSummary(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails) TransactionSummary {
+func makeTxSummary(dbtx walletdb.ReadTx, w *Wallet, details *wtxmgr.TxDetails) TransactionSummary {
 	serializedTx := details.SerializedTx
 	if serializedTx == nil {
 		var buf bytes.Buffer
-		buf.Grow(details.MsgTx.SerializeSize())
 		err := details.MsgTx.Serialize(&buf)
 		if err != nil {
 			log.Errorf("Transaction serialization: %v", err)
@@ -146,86 +133,21 @@ func makeTxSummary(dbtx walletdb.ReadTx, w *Wallet, details *udb.TxDetails) Tran
 		if !mine {
 			continue
 		}
-		acct, internal, address, amount, outputScript := lookupOutputChain(dbtx, w, details, details.Credits[credIndex])
+		acct, internal := lookupOutputChain(dbtx, w, details, details.Credits[credIndex])
 		output := TransactionSummaryOutput{
-			Index:        uint32(i),
-			Account:      acct,
-			Internal:     internal,
-			Amount:       pfcutil.Amount(amount),
-			Address:      address,
-			OutputScript: outputScript,
+			Index:    uint32(i),
+			Account:  acct,
+			Internal: internal,
 		}
 		outputs = append(outputs, output)
 	}
-
-	var transactionType = TxTransactionType(&details.MsgTx)
-
-	// Use earliest of receive time or block time if the transaction is mined.
-	receiveTime := details.Received
-	if details.Height() >= 0 && details.Block.Time.Before(receiveTime) {
-		receiveTime = details.Block.Time
-	}
-
 	return TransactionSummary{
 		Hash:        &details.Hash,
 		Transaction: serializedTx,
 		MyInputs:    inputs,
 		MyOutputs:   outputs,
 		Fee:         fee,
-		Timestamp:   receiveTime.Unix(),
-		Type:        transactionType,
-	}
-}
-
-func makeTicketSummary(chainClient *pfcrpcclient.Client, dbtx walletdb.ReadTx, w *Wallet, details *udb.TicketDetails) *TicketSummary {
-	var ticketStatus = TicketStatusLive
-
-	ticketTransactionDetails := makeTxSummary(dbtx, w, details.Ticket)
-	if details.Spender != nil {
-		spenderTransactionDetails := makeTxSummary(dbtx, w, details.Spender)
-		if details.Spender.TxType == stake.TxTypeSSGen {
-			ticketStatus = TicketStatusVoted
-		} else if details.Spender.TxType == stake.TxTypeSSRtx {
-			ticketStatus = TicketStatusRevoked
-		} else {
-			// chainClient can be nil if in spv mode
-			if chainClient != nil {
-				// Final check to see if ticket was missed otherwise it's live
-				live, err := chainClient.ExistsLiveTicket(&details.Ticket.Hash)
-				if err != nil {
-					log.Errorf("Unable to check if ticket was live for ticket status: %v", &details.Ticket.Hash)
-					ticketStatus = TicketStatusUnknown
-				} else if !live {
-					ticketStatus = TicketStatusMissed
-				}
-			}
-		}
-		return &TicketSummary{
-			Ticket:  &ticketTransactionDetails,
-			Spender: &spenderTransactionDetails,
-			Status:  ticketStatus,
-		}
-	}
-
-	if details.Ticket.Height() == int32(-1) {
-		ticketStatus = TicketStatusUnmined
-	} else {
-		txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
-
-		_, tipHeight := w.TxStore.MainChainTip(txmgrNs)
-
-		// Check if ticket age is not yet mature
-		if !ticketMatured(w.chainParams, details.Ticket.Height(), tipHeight) {
-			ticketStatus = TicketStatusImmature
-			// Check if ticket age is over TicketExpiry limit and therefore expired
-		} else if ticketExpired(w.chainParams, details.Ticket.Height(), tipHeight) {
-			ticketStatus = TicketStatusExpired
-		}
-	}
-	return &TicketSummary{
-		Ticket:  &ticketTransactionDetails,
-		Spender: nil,
-		Status:  ticketStatus,
+		Timestamp:   details.Received.Unix(),
 	}
 }
 
@@ -236,12 +158,12 @@ func totalBalances(dbtx walletdb.ReadTx, w *Wallet, m map[uint32]pfcutil.Amount)
 		return err
 	}
 	for i := range unspent {
-		output := unspent[i]
+		output := &unspent[i]
 		var outputAcct uint32
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(
-			txscript.DefaultScriptVersion, output.PkScript, w.chainParams)
+			output.PkScript, w.chainParams)
 		if err == nil && len(addrs) > 0 {
-			outputAcct, err = w.Manager.AddrAccount(addrmgrNs, addrs[0])
+			_, outputAcct, err = w.Manager.AddrAccount(addrmgrNs, addrs[0])
 		}
 		if err == nil {
 			_, ok := m[outputAcct]
@@ -272,11 +194,12 @@ func relevantAccounts(w *Wallet, m map[uint32]pfcutil.Amount, txs []TransactionS
 	}
 }
 
-func (s *NotificationServer) notifyUnminedTransaction(dbtx walletdb.ReadTx, details *udb.TxDetails) {
+func (s *NotificationServer) notifyUnminedTransaction(dbtx walletdb.ReadTx, details *wtxmgr.TxDetails) {
 	// Sanity check: should not be currently coalescing a notification for
 	// mined transactions at the same time that an unmined tx is notified.
 	if s.currentTxNtfn != nil {
-		log.Tracef("Notifying unmined tx notification while creating notification for blocks")
+		log.Errorf("Notifying unmined tx notification (%s) while creating notification for blocks",
+			details.Hash)
 	}
 
 	defer s.mu.Unlock()
@@ -316,19 +239,25 @@ func (s *NotificationServer) notifyDetachedBlock(hash *chainhash.Hash) {
 	s.currentTxNtfn.DetachedBlocks = append(s.currentTxNtfn.DetachedBlocks, hash)
 }
 
-func (s *NotificationServer) notifyMinedTransaction(dbtx walletdb.ReadTx, details *udb.TxDetails, block *udb.BlockMeta) {
+func (s *NotificationServer) notifyMinedTransaction(dbtx walletdb.ReadTx, details *wtxmgr.TxDetails, block *wtxmgr.BlockMeta) {
 	if s.currentTxNtfn == nil {
 		s.currentTxNtfn = &TransactionNotifications{}
 	}
 	n := len(s.currentTxNtfn.AttachedBlocks)
-	if n == 0 || s.currentTxNtfn.AttachedBlocks[n-1].Header.BlockHash() != block.Hash {
-		return
+	if n == 0 || *s.currentTxNtfn.AttachedBlocks[n-1].Hash != block.Hash {
+		s.currentTxNtfn.AttachedBlocks = append(s.currentTxNtfn.AttachedBlocks, Block{
+			Hash:      &block.Hash,
+			Height:    block.Height,
+			Timestamp: block.Time.Unix(),
+		})
+		n++
 	}
-	txs := &s.currentTxNtfn.AttachedBlocks[n-1].Transactions
-	*txs = append(*txs, makeTxSummary(dbtx, s.wallet, details))
+	txs := s.currentTxNtfn.AttachedBlocks[n-1].Transactions
+	s.currentTxNtfn.AttachedBlocks[n-1].Transactions =
+		append(txs, makeTxSummary(dbtx, s.wallet, details))
 }
 
-func (s *NotificationServer) notifyAttachedBlock(dbtx walletdb.ReadTx, block *wire.BlockHeader, blockHash *chainhash.Hash) {
+func (s *NotificationServer) notifyAttachedBlock(dbtx walletdb.ReadTx, block *wtxmgr.BlockMeta) {
 	if s.currentTxNtfn == nil {
 		s.currentTxNtfn = &TransactionNotifications{}
 	}
@@ -336,22 +265,29 @@ func (s *NotificationServer) notifyAttachedBlock(dbtx walletdb.ReadTx, block *wi
 	// Add block details if it wasn't already included for previously
 	// notified mined transactions.
 	n := len(s.currentTxNtfn.AttachedBlocks)
-	if n == 0 || s.currentTxNtfn.AttachedBlocks[n-1].Header.BlockHash() != *blockHash {
+	if n == 0 || *s.currentTxNtfn.AttachedBlocks[n-1].Hash != block.Hash {
 		s.currentTxNtfn.AttachedBlocks = append(s.currentTxNtfn.AttachedBlocks, Block{
-			Header: block,
+			Hash:      &block.Hash,
+			Height:    block.Height,
+			Timestamp: block.Time.Unix(),
 		})
 	}
-}
 
-func (s *NotificationServer) sendAttachedBlockNotification() {
-	// Avoid work if possible
+	// For now (until notification coalescing isn't necessary) just use
+	// chain length to determine if this is the new best block.
+	if s.wallet.ChainSynced() {
+		if len(s.currentTxNtfn.DetachedBlocks) >= len(s.currentTxNtfn.AttachedBlocks) {
+			return
+		}
+	}
+
+	defer s.mu.Unlock()
 	s.mu.Lock()
-	if len(s.transactions) == 0 {
-		s.mu.Unlock()
+	clients := s.transactions
+	if len(clients) == 0 {
 		s.currentTxNtfn = nil
 		return
 	}
-	s.mu.Unlock()
 
 	// The UnminedTransactions field is intentionally not set.  Since the
 	// hashes of all detached blocks are reported, and all transactions
@@ -360,38 +296,28 @@ func (s *NotificationServer) sendAttachedBlockNotification() {
 	// a mined transaction in the new best chain, there is no possiblity of
 	// a new, previously unseen transaction appearing in unconfirmed.
 
-	var (
-		w             = s.wallet
-		bals          = make(map[uint32]pfcutil.Amount)
-		unminedHashes []*chainhash.Hash
-	)
-	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
-		txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
-		var err error
-		unminedHashes, err = w.TxStore.UnminedTxHashes(txmgrNs)
-		if err != nil {
-			return err
-		}
-		for _, b := range s.currentTxNtfn.AttachedBlocks {
-			relevantAccounts(w, bals, b.Transactions)
-		}
-		return totalBalances(dbtx, w, bals)
-
-	})
+	txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
+	unminedHashes, err := s.wallet.TxStore.UnminedTxHashes(txmgrNs)
 	if err != nil {
-		log.Errorf("Failed to construct attached blocks notification: %v", err)
-		s.currentTxNtfn = nil
+		log.Errorf("Cannot fetch unmined transaction hashes: %v", err)
 		return
 	}
-
 	s.currentTxNtfn.UnminedTransactionHashes = unminedHashes
+
+	bals := make(map[uint32]pfcutil.Amount)
+	for _, b := range s.currentTxNtfn.AttachedBlocks {
+		relevantAccounts(s.wallet, bals, b.Transactions)
+	}
+	err = totalBalances(dbtx, s.wallet, bals)
+	if err != nil {
+		log.Errorf("Cannot determine balances for relevant accounts: %v", err)
+		return
+	}
 	s.currentTxNtfn.NewBalances = flattenBalanceMap(bals)
 
-	s.mu.Lock()
-	for _, c := range s.transactions {
+	for _, c := range clients {
 		c <- s.currentTxNtfn
 	}
-	s.mu.Unlock()
 	s.currentTxNtfn = nil
 }
 
@@ -424,38 +350,11 @@ type TransactionNotifications struct {
 // Block contains the properties and all relevant transactions of an attached
 // block.
 type Block struct {
-	Header       *wire.BlockHeader // Nil if referring to mempool
+	Hash         *chainhash.Hash
+	Height       int32
+	Timestamp    int64
 	Transactions []TransactionSummary
 }
-
-// TicketSummary contains the properties to describe a ticket's current status
-type TicketSummary struct {
-	Ticket  *TransactionSummary
-	Spender *TransactionSummary
-	Status  TicketStatus
-}
-
-// TicketStatus describes the current status a ticket can be observed to be.
-type TicketStatus int8
-
-const (
-	// TicketStatusUnknown any ticket that its status was unable to be determined.
-	TicketStatusUnknown TicketStatus = iota
-	// TicketStatusUnmined any not yet mined ticket.
-	TicketStatusUnmined
-	// TicketStatusImmature any so to be live ticket.
-	TicketStatusImmature
-	// TicketStatusLive any currently live ticket.
-	TicketStatusLive
-	// TicketStatusVoted any ticket that was seen to have voted.
-	TicketStatusVoted
-	// TicketStatusRevoked any ticket that has been previously revoked.
-	TicketStatusRevoked
-	// TicketStatusMissed any ticket that has yet to be revoked, and was missed.
-	TicketStatusMissed
-	// TicketStatusExpired any ticket that has yet to be revoked, and was expired.
-	TicketStatusExpired
-)
 
 // TransactionSummary contains a transaction relevant to the wallet and marks
 // which inputs and outputs were relevant.
@@ -466,48 +365,6 @@ type TransactionSummary struct {
 	MyOutputs   []TransactionSummaryOutput
 	Fee         pfcutil.Amount
 	Timestamp   int64
-	Type        TransactionType
-}
-
-// TransactionType describes the which type of transaction is has been observed to be.
-// For instance, if it has a ticket as an input and a stake base reward as an ouput,
-// it is known to be a vote.
-type TransactionType int8
-
-const (
-	// TransactionTypeRegular transaction type for all regular transactions.
-	TransactionTypeRegular TransactionType = iota
-
-	// TransactionTypeCoinbase is the transaction type for all coinbase transactions.
-	TransactionTypeCoinbase
-
-	// TransactionTypeTicketPurchase transaction type for all transactions that
-	// consume regular transactions as inputs and have commitments for future votes
-	// as outputs.
-	TransactionTypeTicketPurchase
-
-	// TransactionTypeVote transaction type for all transactions that consume a ticket
-	// and also offer a stake base reward output.
-	TransactionTypeVote
-
-	// TransactionTypeRevocation transaction type for all transactions that consume a
-	// ticket, but offer no stake base reward.
-	TransactionTypeRevocation
-)
-
-// TxTransactionType returns the correct TransactionType given a wire transaction
-func TxTransactionType(tx *wire.MsgTx) TransactionType {
-	if blockchain.IsCoinBaseTx(tx) {
-		return TransactionTypeCoinbase
-	} else if stake.IsSStx(tx) {
-		return TransactionTypeTicketPurchase
-	} else if stake.IsSSGen(tx) {
-		return TransactionTypeVote
-	} else if stake.IsSSRtx(tx) {
-		return TransactionTypeRevocation
-	} else {
-		return TransactionTypeRegular
-	}
 }
 
 // TransactionSummaryInput describes a transaction input that is relevant to the
@@ -524,12 +381,9 @@ type TransactionSummaryInput struct {
 // controlled by the wallet.  The Index field marks the transaction output index
 // of the transaction (not included here).
 type TransactionSummaryOutput struct {
-	Index        uint32
-	Account      uint32
-	Internal     bool
-	Amount       pfcutil.Amount
-	Address      pfcutil.Address
-	OutputScript []byte
+	Index    uint32
+	Account  uint32
+	Internal bool
 }
 
 // AccountBalance associates a total (zero confirmation) balance with an
@@ -591,6 +445,121 @@ func (c *TransactionNotificationsClient) Done() {
 	}()
 }
 
+// SpentnessNotifications is a notification that is fired for transaction
+// outputs controlled by some account's keys.  The notification may be about a
+// newly added unspent transaction output or that a previously unspent output is
+// now spent.  When spent, the notification includes the spending transaction's
+// hash and input index.
+type SpentnessNotifications struct {
+	hash         *chainhash.Hash
+	spenderHash  *chainhash.Hash
+	index        uint32
+	spenderIndex uint32
+}
+
+// Hash returns the transaction hash of the spent output.
+func (n *SpentnessNotifications) Hash() *chainhash.Hash {
+	return n.hash
+}
+
+// Index returns the transaction output index of the spent output.
+func (n *SpentnessNotifications) Index() uint32 {
+	return n.index
+}
+
+// Spender returns the spending transction's hash and input index, if any.  If
+// the output is unspent, the final bool return is false.
+func (n *SpentnessNotifications) Spender() (*chainhash.Hash, uint32, bool) {
+	return n.spenderHash, n.spenderIndex, n.spenderHash != nil
+}
+
+// notifyUnspentOutput notifies registered clients of a new unspent output that
+// is controlled by the wallet.
+func (s *NotificationServer) notifyUnspentOutput(account uint32, hash *chainhash.Hash, index uint32) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+	clients := s.spentness[account]
+	if len(clients) == 0 {
+		return
+	}
+	n := &SpentnessNotifications{
+		hash:  hash,
+		index: index,
+	}
+	for _, c := range clients {
+		c <- n
+	}
+}
+
+// notifySpentOutput notifies registered clients that a previously-unspent
+// output is now spent, and includes the spender hash and input index in the
+// notification.
+func (s *NotificationServer) notifySpentOutput(account uint32, op *wire.OutPoint, spenderHash *chainhash.Hash, spenderIndex uint32) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+	clients := s.spentness[account]
+	if len(clients) == 0 {
+		return
+	}
+	n := &SpentnessNotifications{
+		hash:         &op.Hash,
+		index:        op.Index,
+		spenderHash:  spenderHash,
+		spenderIndex: spenderIndex,
+	}
+	for _, c := range clients {
+		c <- n
+	}
+}
+
+// SpentnessNotificationsClient receives SpentnessNotifications from the
+// NotificationServer over the channel C.
+type SpentnessNotificationsClient struct {
+	C       <-chan *SpentnessNotifications
+	account uint32
+	server  *NotificationServer
+}
+
+// AccountSpentnessNotifications registers a client for spentness changes of
+// outputs controlled by the account.
+func (s *NotificationServer) AccountSpentnessNotifications(account uint32) SpentnessNotificationsClient {
+	c := make(chan *SpentnessNotifications)
+	s.mu.Lock()
+	s.spentness[account] = append(s.spentness[account], c)
+	s.mu.Unlock()
+	return SpentnessNotificationsClient{
+		C:       c,
+		account: account,
+		server:  s,
+	}
+}
+
+// Done deregisters the client from the server and drains any remaining
+// messages.  It must be called exactly once when the client is finished
+// receiving notifications.
+func (c *SpentnessNotificationsClient) Done() {
+	go func() {
+		// Drain notifications until the client channel is removed from
+		// the server and closed.
+		for range c.C {
+		}
+	}()
+	go func() {
+		s := c.server
+		s.mu.Lock()
+		clients := s.spentness[c.account]
+		for i, ch := range clients {
+			if c.C == ch {
+				clients[i] = clients[len(clients)-1]
+				s.spentness[c.account] = clients[:len(clients)-1]
+				close(ch)
+				break
+			}
+		}
+		s.mu.Unlock()
+	}()
+}
+
 // AccountNotification contains properties regarding an account, such as its
 // name and the number of derived and imported keys.  When any of these
 // properties change, the notification is fired.
@@ -602,7 +571,7 @@ type AccountNotification struct {
 	ImportedKeyCount uint32
 }
 
-func (s *NotificationServer) notifyAccountProperties(props *udb.AccountProperties) {
+func (s *NotificationServer) notifyAccountProperties(props *waddrmgr.AccountProperties) {
 	defer s.mu.Unlock()
 	s.mu.Lock()
 	clients := s.accountClients
@@ -612,19 +581,9 @@ func (s *NotificationServer) notifyAccountProperties(props *udb.AccountPropertie
 	n := &AccountNotification{
 		AccountNumber:    props.AccountNumber,
 		AccountName:      props.AccountName,
-		ExternalKeyCount: 0,
-		InternalKeyCount: 0,
+		ExternalKeyCount: props.ExternalKeyCount,
+		InternalKeyCount: props.InternalKeyCount,
 		ImportedKeyCount: props.ImportedKeyCount,
-	}
-	// Key counts have to be fudged for BIP0044 accounts a little bit because
-	// only the last used child index is saved.  Add the gap limit since these
-	// addresses have also been generated and are being watched for transaction
-	// activity.
-	if props.AccountNumber <= udb.MaxAccountNum {
-		n.ExternalKeyCount = minUint32(hdkeychain.HardenedKeyStart,
-			props.LastUsedExternalIndex+uint32(s.wallet.gapLimit))
-		n.InternalKeyCount = minUint32(hdkeychain.HardenedKeyStart,
-			props.LastUsedInternalIndex+uint32(s.wallet.gapLimit))
 	}
 	for _, c := range clients {
 		c <- n
@@ -673,317 +632,4 @@ func (c *AccountNotificationsClient) Done() {
 		}
 		s.mu.Unlock()
 	}()
-}
-
-// MainTipChangedNotification describes processed changes to the main chain tip
-// block.  Attached and detached blocks are sorted by increasing heights.
-//
-// This is intended to be a lightweight alternative to TransactionNotifications
-// when only info regarding the main chain tip block changing is needed.
-type MainTipChangedNotification struct {
-	AttachedBlocks []*chainhash.Hash
-	DetachedBlocks []*chainhash.Hash
-	NewHeight      int32
-}
-
-// MainTipChangedNotificationsClient receives MainTipChangedNotifications over
-// the channel C.
-type MainTipChangedNotificationsClient struct {
-	C      chan *MainTipChangedNotification
-	server *NotificationServer
-}
-
-// MainTipChangedNotifications returns a client for receiving
-// MainTipChangedNotification over a channel.  The channel is unbuffered.  When
-// finished, the client's Done method should be called to disassociate the
-// client from the server.
-func (s *NotificationServer) MainTipChangedNotifications() MainTipChangedNotificationsClient {
-	c := make(chan *MainTipChangedNotification)
-	s.mu.Lock()
-	s.tipChangedClients = append(s.tipChangedClients, c)
-	s.mu.Unlock()
-	return MainTipChangedNotificationsClient{
-		C:      c,
-		server: s,
-	}
-}
-
-// Done deregisters the client from the server and drains any remaining
-// messages.  It must be called exactly once when the client is finished
-// receiving notifications.
-func (c *MainTipChangedNotificationsClient) Done() {
-	go func() {
-		for range c.C {
-		}
-	}()
-	go func() {
-		s := c.server
-		s.mu.Lock()
-		clients := s.tipChangedClients
-		for i, ch := range clients {
-			if c.C == ch {
-				clients[i] = clients[len(clients)-1]
-				s.tipChangedClients = clients[:len(clients)-1]
-				close(ch)
-				break
-			}
-		}
-		s.mu.Unlock()
-	}()
-}
-
-func (s *NotificationServer) notifyMainChainTipChanged(n *MainTipChangedNotification) {
-	s.mu.Lock()
-
-	for _, c := range s.tipChangedClients {
-		c <- n
-	}
-
-	if len(s.confClients) > 0 {
-		var wg sync.WaitGroup
-		wg.Add(len(s.confClients))
-		for _, c := range s.confClients {
-			c := c
-			go func() {
-				c.process(n.NewHeight)
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-	}
-
-	s.mu.Unlock()
-}
-
-// ConfirmationNotifications registers a client for confirmation notifications
-// from the notification server.
-func (s *NotificationServer) ConfirmationNotifications(ctx context.Context) *ConfirmationNotificationsClient {
-	c := &ConfirmationNotificationsClient{
-		watched: make(map[chainhash.Hash]int32),
-		r:       make(chan *confNtfnResult),
-		ctx:     ctx,
-		s:       s,
-	}
-
-	// Register with the server
-	s.mu.Lock()
-	s.confClients = append(s.confClients, c)
-	s.mu.Unlock()
-
-	// Cleanup when caller signals done.
-	go func() {
-		<-ctx.Done()
-
-		// Remove item from notification server's slice
-		s.mu.Lock()
-		slice := &s.confClients
-		for i, sc := range *slice {
-			if c == sc {
-				(*slice)[i] = (*slice)[len(*slice)-1]
-				*slice = (*slice)[:len(*slice)-1]
-				break
-			}
-		}
-		s.mu.Unlock()
-	}()
-
-	return c
-}
-
-// ConfirmationNotificationsClient provides confirmation notifications of watched
-// transactions until the caller's context signals done.  Callers register for
-// notifications using Watch and receive notifications by calling Recv.
-type ConfirmationNotificationsClient struct {
-	watched map[chainhash.Hash]int32
-	mu      sync.Mutex
-
-	r   chan *confNtfnResult
-	ctx context.Context
-	s   *NotificationServer
-}
-
-type confNtfnResult struct {
-	result []ConfirmationNotification
-	err    error
-}
-
-// ConfirmationNotification describes the number of confirmations of a single
-// transaction, or -1 if the transaction is unknown or removed from the wallet.
-// If the transaction is mined (Confirmations >= 1), the block hash and height
-// is included.  Otherwise the block hash is nil and the block height is set to
-// -1.
-type ConfirmationNotification struct {
-	TxHash        *chainhash.Hash
-	Confirmations int32
-	BlockHash     *chainhash.Hash // nil when unmined
-	BlockHeight   int32           // -1 when unmined
-}
-
-// Watch adds additional transactions to watch and create confirmation results
-// for.  Results are immediately created with the current number of
-// confirmations and are watched until stopAfter confirmations is met or the
-// transaction is unknown or removed from the wallet.
-func (c *ConfirmationNotificationsClient) Watch(txHashes []*chainhash.Hash, stopAfter int32) {
-	w := c.s.wallet
-	r := make([]ConfirmationNotification, 0, len(c.watched))
-	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
-		txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
-		_, tipHeight := w.TxStore.MainChainTip(txmgrNs)
-		// cannot range here, txHashes may be modified
-		for i := 0; i < len(txHashes); {
-			h := txHashes[i]
-			height, err := w.TxStore.TxBlockHeight(dbtx, h)
-			var confs int32
-			switch {
-			case errors.Is(errors.NotExist, err):
-				confs = -1
-			default:
-				// Remove tx hash from watching list if tx block has been mined
-				// and then invalidated by next block
-				if tipHeight > height && height > 0 {
-					txDetails, err := w.TxStore.TxDetails(txmgrNs, h)
-					if err != nil {
-						return err
-					}
-					_, invalidated := w.TxStore.BlockInMainChain(dbtx, &txDetails.Block.Hash)
-					if invalidated {
-						confs = -1
-						break
-					}
-				}
-				confs = confirms(height, tipHeight)
-			case err != nil:
-				return err
-			}
-			r = append(r, ConfirmationNotification{
-				TxHash:        h,
-				Confirmations: confs,
-				BlockHeight:   -1,
-			})
-			if confs > 0 {
-				result := &r[len(r)-1]
-				height, err := w.TxStore.TxBlockHeight(dbtx, result.TxHash)
-				if err != nil {
-					return err
-				}
-				blockHash, err := w.TxStore.GetMainChainBlockHashForHeight(txmgrNs, height)
-				if err != nil {
-					return err
-				}
-				result.BlockHash = &blockHash
-				result.BlockHeight = height
-			}
-			if confs >= stopAfter || confs == -1 {
-				// Remove this hash from the slice so it is not added to the
-				// watch map.  Do not increment i so this same index is used
-				// next iteration with the new hash.
-				s := &txHashes
-				(*s)[i] = (*s)[len(*s)-1]
-				*s = (*s)[:len(*s)-1]
-			} else {
-				i++
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		r = nil
-	}
-	c.r <- &confNtfnResult{r, err}
-
-	c.mu.Lock()
-	for _, h := range txHashes {
-		c.watched[*h] = stopAfter
-	}
-	c.mu.Unlock()
-}
-
-// Recv waits for the next notification.  Returns context.Canceled when the
-// context is canceled.
-func (c *ConfirmationNotificationsClient) Recv() ([]ConfirmationNotification, error) {
-	select {
-	case <-c.ctx.Done():
-		return nil, context.Canceled
-	case r := <-c.r:
-		return r.result, r.err
-	}
-}
-
-func (c *ConfirmationNotificationsClient) process(tipHeight int32) {
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-	}
-
-	c.mu.Lock()
-	w := c.s.wallet
-	r := &confNtfnResult{
-		result: make([]ConfirmationNotification, 0, len(c.watched)),
-	}
-	var unwatch []*chainhash.Hash
-	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
-		txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
-		for txHash, stopAfter := range c.watched {
-			txHash := txHash // copy
-			height, err := w.TxStore.TxBlockHeight(dbtx, &txHash)
-			var confs int32
-			switch {
-			case errors.Is(errors.NotExist, err):
-				confs = -1
-			default:
-				// Remove tx hash from watching list if tx block has been mined
-				// and then invalidated by next block
-				if tipHeight > height && height > 0 {
-					txDetails, err := w.TxStore.TxDetails(txmgrNs, &txHash)
-					if err != nil {
-						return err
-					}
-					_, invalidated := w.TxStore.BlockInMainChain(dbtx, &txDetails.Block.Hash)
-					if invalidated {
-						confs = -1
-						break
-					}
-				}
-				confs = confirms(height, tipHeight)
-			case err != nil:
-				return err
-			}
-			r.result = append(r.result, ConfirmationNotification{
-				TxHash:        &txHash,
-				Confirmations: confs,
-				BlockHeight:   -1,
-			})
-			if confs > 0 {
-				result := &r.result[len(r.result)-1]
-				height, err := w.TxStore.TxBlockHeight(dbtx, result.TxHash)
-				if err != nil {
-					return err
-				}
-				blockHash, err := w.TxStore.GetMainChainBlockHashForHeight(txmgrNs, height)
-				if err != nil {
-					return err
-				}
-				result.BlockHash = &blockHash
-				result.BlockHeight = height
-			}
-			if confs >= stopAfter || confs == -1 {
-				unwatch = append(unwatch, &txHash)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		r.result = nil
-		r.err = err
-	}
-	for _, h := range unwatch {
-		delete(c.watched, *h)
-	}
-	c.mu.Unlock()
-
-	select {
-	case c.r <- r:
-	case <-c.ctx.Done():
-	}
 }

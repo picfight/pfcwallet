@@ -1,3 +1,3 @@
 ### Guides
 
-[Spending funds offline using cold wallets](https://github.com/picfight/pfcwallet/tree/master/docs/offline_wallets.md)
+[Rebuilding all transaction history with forced rescans](https://github.com/picfight/pfcwallet/tree/master/docs/force_rescans.md)

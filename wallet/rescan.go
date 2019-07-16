@@ -1,405 +1,318 @@
-// Copyright (c) 2013-2014 The btcsuite developers
-// Copyright (c) 2015-2018 The Decred developers
+// Copyright (c) 2013-2017 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
 package wallet
 
 import (
-	"context"
-	"time"
-
-	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
-	"golang.org/x/crypto/ripemd160"
+	"github.com/picfight/pfcutil"
+	"github.com/picfight/pfcwallet/chain"
+	"github.com/picfight/pfcwallet/waddrmgr"
+	"github.com/picfight/pfcwallet/wtxmgr"
 )
 
-const maxBlocksPerRescan = 2000
-
-// RescanFilter implements a precise filter intended to hold all watched wallet
-// data in memory such as addresses and unspent outputs.  The zero value is not
-// valid, and filters must be created using NewRescanFilter.  RescanFilter is
-// not safe for concurrent access.
-type RescanFilter struct {
-	// Implemented fast paths for address lookup.
-	pubKeyHashes        map[[ripemd160.Size]byte]struct{}
-	scriptHashes        map[[ripemd160.Size]byte]struct{}
-	compressedPubKeys   map[[33]byte]struct{}
-	uncompressedPubKeys map[[65]byte]struct{}
-
-	// A fallback address lookup map in case a fast path doesn't exist.
-	// Only exists for completeness.  If using this shows up in a profile,
-	// there's a good chance a fast path should be added.
-	otherAddresses map[string]struct{}
-
-	// Outpoints of unspent outputs.
-	unspent map[wire.OutPoint]struct{}
+// RescanProgressMsg reports the current progress made by a rescan for a
+// set of wallet addresses.
+type RescanProgressMsg struct {
+	Addresses    []pfcutil.Address
+	Notification *chain.RescanProgress
 }
 
-// NewRescanFilter creates and initializes a RescanFilter containing each passed
-// address and outpoint.
-func NewRescanFilter(addresses []pfcutil.Address, unspentOutPoints []*wire.OutPoint) *RescanFilter {
-	filter := &RescanFilter{
-		pubKeyHashes:        map[[ripemd160.Size]byte]struct{}{},
-		scriptHashes:        map[[ripemd160.Size]byte]struct{}{},
-		compressedPubKeys:   map[[33]byte]struct{}{},
-		uncompressedPubKeys: map[[65]byte]struct{}{},
-		otherAddresses:      map[string]struct{}{},
-		unspent:             make(map[wire.OutPoint]struct{}, len(unspentOutPoints)),
-	}
-
-	for _, s := range addresses {
-		filter.AddAddress(s)
-	}
-	for _, op := range unspentOutPoints {
-		filter.AddUnspentOutPoint(op)
-	}
-
-	return filter
+// RescanFinishedMsg reports the addresses that were rescanned when a
+// rescanfinished message was received rescanning a batch of addresses.
+type RescanFinishedMsg struct {
+	Addresses    []pfcutil.Address
+	Notification *chain.RescanFinished
 }
 
-// AddAddress adds an address to the filter if it does not already exist.
-func (f *RescanFilter) AddAddress(a pfcutil.Address) {
-	switch a := a.(type) {
-	case *pfcutil.AddressPubKeyHash:
-		f.pubKeyHashes[*a.Hash160()] = struct{}{}
-	case *pfcutil.AddressScriptHash:
-		f.scriptHashes[*a.Hash160()] = struct{}{}
-	case *pfcutil.AddressSecpPubKey:
-		serializedPubKey := a.ScriptAddress()
-		switch len(serializedPubKey) {
-		case 33: // compressed
-			var compressedPubKey [33]byte
-			copy(compressedPubKey[:], serializedPubKey)
-			f.compressedPubKeys[compressedPubKey] = struct{}{}
-		case 65: // uncompressed
-			var uncompressedPubKey [65]byte
-			copy(uncompressedPubKey[:], serializedPubKey)
-			f.uncompressedPubKeys[uncompressedPubKey] = struct{}{}
-		}
-	default:
-		f.otherAddresses[a.EncodeAddress()] = struct{}{}
+// RescanJob is a job to be processed by the RescanManager.  The job includes
+// a set of wallet addresses, a starting height to begin the rescan, and
+// outpoints spendable by the addresses thought to be unspent.  After the
+// rescan completes, the error result of the rescan RPC is sent on the Err
+// channel.
+type RescanJob struct {
+	InitialSync bool
+	Addrs       []pfcutil.Address
+	OutPoints   map[wire.OutPoint]pfcutil.Address
+	BlockStamp  waddrmgr.BlockStamp
+	err         chan error
+}
+
+// rescanBatch is a collection of one or more RescanJobs that were merged
+// together before a rescan is performed.
+type rescanBatch struct {
+	initialSync bool
+	addrs       []pfcutil.Address
+	outpoints   map[wire.OutPoint]pfcutil.Address
+	bs          waddrmgr.BlockStamp
+	errChans    []chan error
+}
+
+// SubmitRescan submits a RescanJob to the RescanManager.  A channel is
+// returned with the final error of the rescan.  The channel is buffered
+// and does not need to be read to prevent a deadlock.
+func (w *Wallet) SubmitRescan(job *RescanJob) <-chan error {
+	errChan := make(chan error, 1)
+	job.err = errChan
+	select {
+	case w.rescanAddJob <- job:
+	case <-w.quitChan():
+		errChan <- ErrWalletShuttingDown
+	}
+	return errChan
+}
+
+// batch creates the rescanBatch for a single rescan job.
+func (job *RescanJob) batch() *rescanBatch {
+	return &rescanBatch{
+		initialSync: job.InitialSync,
+		addrs:       job.Addrs,
+		outpoints:   job.OutPoints,
+		bs:          job.BlockStamp,
+		errChans:    []chan error{job.err},
 	}
 }
 
-// ExistsAddress returns whether an address is contained in the filter.
-func (f *RescanFilter) ExistsAddress(a pfcutil.Address) (ok bool) {
-	switch a := a.(type) {
-	case *pfcutil.AddressPubKeyHash:
-		_, ok = f.pubKeyHashes[*a.Hash160()]
-	case *pfcutil.AddressScriptHash:
-		_, ok = f.scriptHashes[*a.Hash160()]
-	case *pfcutil.AddressSecpPubKey:
-		serializedPubKey := a.ScriptAddress()
-		switch len(serializedPubKey) {
-		case 33: // compressed
-			var compressedPubKey [33]byte
-			copy(compressedPubKey[:], serializedPubKey)
-			_, ok = f.compressedPubKeys[compressedPubKey]
-			if !ok {
-				_, ok = f.pubKeyHashes[*a.AddressPubKeyHash().Hash160()]
-			}
-		case 65: // uncompressed
-			var uncompressedPubKey [65]byte
-			copy(uncompressedPubKey[:], serializedPubKey)
-			_, ok = f.uncompressedPubKeys[uncompressedPubKey]
-			if !ok {
-				_, ok = f.pubKeyHashes[*a.AddressPubKeyHash().Hash160()]
-			}
-		}
-	default:
-		_, ok = f.otherAddresses[a.EncodeAddress()]
+// merge merges the work from k into j, setting the starting height to
+// the minimum of the two jobs.  This method does not check for
+// duplicate addresses or outpoints.
+func (b *rescanBatch) merge(job *RescanJob) {
+	if job.InitialSync {
+		b.initialSync = true
 	}
-	return
+	b.addrs = append(b.addrs, job.Addrs...)
+
+	for op, addr := range job.OutPoints {
+		b.outpoints[op] = addr
+	}
+
+	if job.BlockStamp.Height < b.bs.Height {
+		b.bs = job.BlockStamp
+	}
+	b.errChans = append(b.errChans, job.err)
 }
 
-// RemoveAddress removes an address from the filter if it exists.
-func (f *RescanFilter) RemoveAddress(a pfcutil.Address) {
-	switch a := a.(type) {
-	case *pfcutil.AddressPubKeyHash:
-		delete(f.pubKeyHashes, *a.Hash160())
-	case *pfcutil.AddressScriptHash:
-		delete(f.scriptHashes, *a.Hash160())
-	case *pfcutil.AddressSecpPubKey:
-		serializedPubKey := a.ScriptAddress()
-		switch len(serializedPubKey) {
-		case 33: // compressed
-			var compressedPubKey [33]byte
-			copy(compressedPubKey[:], serializedPubKey)
-			delete(f.compressedPubKeys, compressedPubKey)
-		case 65: // uncompressed
-			var uncompressedPubKey [65]byte
-			copy(uncompressedPubKey[:], serializedPubKey)
-			delete(f.uncompressedPubKeys, uncompressedPubKey)
-		}
-	default:
-		delete(f.otherAddresses, a.EncodeAddress())
+// done iterates through all error channels, duplicating sending the error
+// to inform callers that the rescan finished (or could not complete due
+// to an error).
+func (b *rescanBatch) done(err error) {
+	for _, c := range b.errChans {
+		c <- err
 	}
 }
 
-// AddUnspentOutPoint adds an outpoint to the filter if it does not already
-// exist.
-func (f *RescanFilter) AddUnspentOutPoint(op *wire.OutPoint) {
-	f.unspent[*op] = struct{}{}
-}
+// rescanBatchHandler handles incoming rescan request, serializing rescan
+// submissions, and possibly batching many waiting requests together so they
+// can be handled by a single rescan after the current one completes.
+func (w *Wallet) rescanBatchHandler() {
+	defer w.wg.Done()
 
-// ExistsUnspentOutPoint returns whether an outpoint is contained in the filter.
-func (f *RescanFilter) ExistsUnspentOutPoint(op *wire.OutPoint) bool {
-	_, ok := f.unspent[*op]
-	return ok
-}
+	var curBatch, nextBatch *rescanBatch
+	quit := w.quitChan()
 
-// RemoveUnspentOutPoint removes an outpoint from the filter if it exists.
-func (f *RescanFilter) RemoveUnspentOutPoint(op *wire.OutPoint) {
-	delete(f.unspent, *op)
-}
-
-// RescanSaver records transactions from a rescaned block.
-type RescanSaver interface {
-	SaveRescanned(hash *chainhash.Hash, txs []*wire.MsgTx) error
-}
-
-// SaveRescanned records transactions from a rescanned block.  This
-// does not update the network backend with data to watch for future
-// relevant transactions as the rescanner is assumed to handle this
-// task.
-func (w *Wallet) SaveRescanned(hash *chainhash.Hash, txs []*wire.MsgTx) error {
-	const op errors.Op = "wallet.SaveRescanned"
-	err := walletdb.Update(w.db, func(dbtx walletdb.ReadWriteTx) error {
-		txmgrNs := dbtx.ReadWriteBucket(wtxmgrNamespaceKey)
-		blockMeta, err := w.TxStore.GetBlockMetaForHash(txmgrNs, hash)
-		if err != nil {
-			return err
-		}
-		header, err := w.TxStore.GetBlockHeader(dbtx, hash)
-		if err != nil {
-			return err
-		}
-
-		for _, tx := range txs {
-			rec, err := udb.NewTxRecordFromMsgTx(tx, time.Now())
-			if err != nil {
-				return err
-			}
-			_, err = w.processTransactionRecord(dbtx, rec, header, &blockMeta)
-			if err != nil {
-				return err
-			}
-		}
-		return w.TxStore.UpdateProcessedTxsBlockMarker(dbtx, hash)
-	})
-	if err != nil {
-		return errors.E(op, err)
-	}
-	return nil
-}
-
-// rescan synchronously scans over all blocks on the main chain starting at
-// startHash and height up through the recorded main chain tip block.  The
-// progress channel, if non-nil, is sent non-error progress notifications with
-// the heights the rescan has completed through, starting with the start height.
-func (w *Wallet) rescan(ctx context.Context, n NetworkBackend,
-	startHash *chainhash.Hash, height int32, p chan<- RescanProgress) error {
-
-	blockHashStorage := make([]chainhash.Hash, maxBlocksPerRescan)
-	rescanFrom := *startHash
-	inclusive := true
 	for {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		var rescanBlocks []chainhash.Hash
-		err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
-			txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
-			var err error
-			rescanBlocks, err = w.TxStore.GetMainChainBlockHashes(txmgrNs,
-				&rescanFrom, inclusive, blockHashStorage)
-			return err
-		})
-		if err != nil {
-			return err
-		}
-		if len(rescanBlocks) == 0 {
-			break
-		}
-
-		through := height + int32(len(rescanBlocks)) - 1
-		// Genesis block is not rescanned
-		if height == 0 {
-			rescanBlocks = rescanBlocks[1:]
-			height = 1
-			if len(rescanBlocks) == 0 {
-				break
+		case job := <-w.rescanAddJob:
+			if curBatch == nil {
+				// Set current batch as this job and send
+				// request.
+				curBatch = job.batch()
+				select {
+				case w.rescanBatch <- curBatch:
+				case <-quit:
+					job.err <- ErrWalletShuttingDown
+					return
+				}
+			} else {
+				// Create next batch if it doesn't exist, or
+				// merge the job.
+				if nextBatch == nil {
+					nextBatch = job.batch()
+				} else {
+					nextBatch.merge(job)
+				}
 			}
-		}
-		log.Infof("Rescanning block range [%v, %v]...", height, through)
-		err = n.Rescan(ctx, rescanBlocks, w)
-		if err != nil {
-			return err
-		}
-		err = walletdb.Update(w.db, func(dbtx walletdb.ReadWriteTx) error {
-			return w.TxStore.UpdateProcessedTxsBlockMarker(dbtx, &rescanBlocks[len(rescanBlocks)-1])
-		})
-		if err != nil {
-			return err
-		}
-		if p != nil {
-			p <- RescanProgress{ScannedThrough: through}
-		}
-		rescanFrom = rescanBlocks[len(rescanBlocks)-1]
-		height += int32(len(rescanBlocks))
-		inclusive = false
-	}
 
-	log.Infof("Rescan complete")
-	return nil
+		case n := <-w.rescanNotifications:
+			switch n := n.(type) {
+			case *chain.RescanProgress:
+				if curBatch == nil {
+					log.Warnf("Received rescan progress " +
+						"notification but no rescan " +
+						"currently running")
+					continue
+				}
+				select {
+				case w.rescanProgress <- &RescanProgressMsg{
+					Addresses:    curBatch.addrs,
+					Notification: n,
+				}:
+				case <-quit:
+					for _, errChan := range curBatch.errChans {
+						errChan <- ErrWalletShuttingDown
+					}
+					return
+				}
+
+			case *chain.RescanFinished:
+				if curBatch == nil {
+					log.Warnf("Received rescan finished " +
+						"notification but no rescan " +
+						"currently running")
+					continue
+				}
+				select {
+				case w.rescanFinished <- &RescanFinishedMsg{
+					Addresses:    curBatch.addrs,
+					Notification: n,
+				}:
+				case <-quit:
+					for _, errChan := range curBatch.errChans {
+						errChan <- ErrWalletShuttingDown
+					}
+					return
+				}
+
+				curBatch, nextBatch = nextBatch, nil
+
+				if curBatch != nil {
+					select {
+					case w.rescanBatch <- curBatch:
+					case <-quit:
+						for _, errChan := range curBatch.errChans {
+							errChan <- ErrWalletShuttingDown
+						}
+						return
+					}
+				}
+
+			default:
+				// Unexpected message
+				panic(n)
+			}
+
+		case <-quit:
+			return
+		}
+	}
 }
 
-// Rescan starts a rescan of the wallet for all blocks on the main chain
-// beginning at startHash.  This function blocks until the rescan completes.
-func (w *Wallet) Rescan(ctx context.Context, n NetworkBackend, startHash *chainhash.Hash) error {
-	const op errors.Op = "wallet.Rescan"
+// rescanProgressHandler handles notifications for partially and fully completed
+// rescans by marking each rescanned address as partially or fully synced.
+func (w *Wallet) rescanProgressHandler() {
+	quit := w.quitChan()
+out:
+	for {
+		// These can't be processed out of order since both chans are
+		// unbuffured and are sent from same context (the batch
+		// handler).
+		select {
+		case msg := <-w.rescanProgress:
+			n := msg.Notification
+			log.Infof("Rescanned through block %v (height %d)",
+				n.Hash, n.Height)
 
-	var startHeight int32
-	err := walletdb.View(w.db, func(tx walletdb.ReadTx) error {
-		txmgrNs := tx.ReadBucket(wtxmgrNamespaceKey)
-		header, err := w.TxStore.GetSerializedBlockHeader(txmgrNs, startHash)
-		if err != nil {
-			return err
+		case msg := <-w.rescanFinished:
+			n := msg.Notification
+			addrs := msg.Addresses
+			noun := pickNoun(len(addrs), "address", "addresses")
+			log.Infof("Finished rescan for %d %s (synced to block "+
+				"%s, height %d)", len(addrs), noun, n.Hash,
+				n.Height)
+
+			go w.resendUnminedTxs()
+
+		case <-quit:
+			break out
 		}
-		startHeight = udb.ExtractBlockHeaderHeight(header)
-		return nil
-	})
-	if err != nil {
-		return errors.E(op, err)
 	}
-
-	err = w.rescan(ctx, n, startHash, startHeight, nil)
-	if err != nil {
-		return errors.E(op, err)
-	}
-	return nil
+	w.wg.Done()
 }
 
-// RescanFromHeight is an alternative to Rescan that takes a block height
-// instead of a hash.  See Rescan for more details.
-func (w *Wallet) RescanFromHeight(ctx context.Context, n NetworkBackend, startHeight int32) error {
-	const op errors.Op = "wallet.RescanFromHeight"
-
-	var startHash chainhash.Hash
-	err := walletdb.View(w.db, func(tx walletdb.ReadTx) error {
-		txmgrNs := tx.ReadBucket(wtxmgrNamespaceKey)
-		var err error
-		startHash, err = w.TxStore.GetMainChainBlockHashForHeight(
-			txmgrNs, startHeight)
-		return err
-	})
+// rescanRPCHandler reads batch jobs sent by rescanBatchHandler and sends the
+// RPC requests to perform a rescan.  New jobs are not read until a rescan
+// finishes.
+func (w *Wallet) rescanRPCHandler() {
+	chainClient, err := w.requireChainClient()
 	if err != nil {
-		return errors.E(op, err)
-	}
-
-	err = w.rescan(ctx, n, &startHash, startHeight, nil)
-	if err != nil {
-		return errors.E(op, err)
-	}
-	return nil
-}
-
-// RescanProgress records the height the rescan has completed through and any
-// errors during processing of the rescan.
-type RescanProgress struct {
-	Err            error
-	ScannedThrough int32
-}
-
-// RescanProgressFromHeight rescans for relevant transactions in all blocks in
-// the main chain starting at startHeight.  Progress notifications and any
-// errors are sent to the channel p.  This function blocks until the rescan
-// completes or ends in an error.  p is closed before returning.
-func (w *Wallet) RescanProgressFromHeight(ctx context.Context, n NetworkBackend,
-	startHeight int32, p chan<- RescanProgress) {
-
-	const op errors.Op = "wallet.RescanProgressFromHeight"
-
-	defer close(p)
-
-	var startHash chainhash.Hash
-	err := walletdb.View(w.db, func(tx walletdb.ReadTx) error {
-		txmgrNs := tx.ReadBucket(wtxmgrNamespaceKey)
-		var err error
-		startHash, err = w.TxStore.GetMainChainBlockHashForHeight(
-			txmgrNs, startHeight)
-		return err
-	})
-	if err != nil {
-		p <- RescanProgress{Err: errors.E(op, err)}
+		log.Errorf("rescanRPCHandler called without an RPC client")
+		w.wg.Done()
 		return
 	}
 
-	err = w.rescan(ctx, n, &startHash, startHeight, p)
-	if err != nil {
-		p <- RescanProgress{Err: errors.E(op, err)}
-	}
-}
+	quit := w.quitChan()
 
-func (w *Wallet) mainChainAncestor(dbtx walletdb.ReadTx, hash *chainhash.Hash) (*chainhash.Hash, error) {
+out:
 	for {
-		mainChain, _ := w.TxStore.BlockInMainChain(dbtx, hash)
-		if mainChain {
-			break
+		select {
+		case batch := <-w.rescanBatch:
+			// Log the newly-started rescan.
+			numAddrs := len(batch.addrs)
+			noun := pickNoun(numAddrs, "address", "addresses")
+			log.Infof("Started rescan from block %v (height %d) for %d %s",
+				batch.bs.Hash, batch.bs.Height, numAddrs, noun)
+
+			err := chainClient.Rescan(&batch.bs.Hash, batch.addrs,
+				batch.outpoints)
+			if err != nil {
+				log.Errorf("Rescan for %d %s failed: %v", numAddrs,
+					noun, err)
+			}
+			batch.done(err)
+		case <-quit:
+			break out
 		}
-		h, err := w.TxStore.GetBlockHeader(dbtx, hash)
+	}
+
+	w.wg.Done()
+}
+
+// Rescan begins a rescan for all active addresses and unspent outputs of
+// a wallet.  This is intended to be used to sync a wallet back up to the
+// current best block in the main chain, and is considered an initial sync
+// rescan.
+func (w *Wallet) Rescan(addrs []pfcutil.Address, unspent []wtxmgr.Credit) error {
+	return w.rescanWithTarget(addrs, unspent, nil)
+}
+
+// rescanWithTarget performs a rescan starting at the optional startStamp. If
+// none is provided, the rescan will begin from the manager's sync tip.
+func (w *Wallet) rescanWithTarget(addrs []pfcutil.Address,
+	unspent []wtxmgr.Credit, startStamp *waddrmgr.BlockStamp) error {
+
+	outpoints := make(map[wire.OutPoint]pfcutil.Address, len(unspent))
+	for _, output := range unspent {
+		_, outputAddrs, _, err := txscript.ExtractPkScriptAddrs(
+			output.PkScript, w.chainParams,
+		)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		hash = &h.PrevBlock
-	}
-	return hash, nil
-}
 
-// RescanPoint returns the block hash at which a rescan should begin
-// (inclusive), or nil when no rescan is necessary.
-func (w *Wallet) RescanPoint() (*chainhash.Hash, error) {
-	const op errors.Op = "wallet.RescanPoint"
-	var rp *chainhash.Hash
-	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
-		var err error
-		rp, err = w.rescanPoint(dbtx)
+		outpoints[output.OutPoint] = outputAddrs[0]
+	}
+
+	// If a start block stamp was provided, we will use that as the initial
+	// starting point for the rescan.
+	if startStamp == nil {
+		startStamp = &waddrmgr.BlockStamp{}
+		*startStamp = w.Manager.SyncedTo()
+	}
+
+	job := &RescanJob{
+		InitialSync: true,
+		Addrs:       addrs,
+		OutPoints:   outpoints,
+		BlockStamp:  *startStamp,
+	}
+
+	// Submit merged job and block until rescan completes.
+	select {
+	case err := <-w.SubmitRescan(job):
 		return err
-	})
-	if err != nil {
-		return nil, errors.E(op, err)
+	case <-w.quitChan():
+		return ErrWalletShuttingDown
 	}
-	return rp, nil
-}
-
-func (w *Wallet) rescanPoint(dbtx walletdb.ReadTx) (*chainhash.Hash, error) {
-	ns := dbtx.ReadBucket(wtxmgrNamespaceKey)
-	r := w.TxStore.ProcessedTxsBlockMarker(dbtx)
-	r, err := w.mainChainAncestor(dbtx, r) // Walk back to the main chain ancestor
-	if err != nil {
-		return nil, err
-	}
-	if tipHash, _ := w.TxStore.MainChainTip(ns); *r == tipHash {
-		return nil, nil
-	}
-	// r is not the tip, so a child block must exist in the main chain.
-	h, err := w.TxStore.GetBlockHeader(dbtx, r)
-	if err != nil {
-		log.Info(err)
-		return nil, err
-	}
-	rescanPoint, err := w.TxStore.GetMainChainBlockHashForHeight(ns, int32(h.Height)+1)
-	if err != nil {
-		log.Info(err)
-		return nil, err
-	}
-	return &rescanPoint, nil
 }

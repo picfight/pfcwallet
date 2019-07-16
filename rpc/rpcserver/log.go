@@ -1,5 +1,4 @@
 // Copyright (c) 2015-2016 The btcsuite developers
-// Copyright (c) 2018 The PicFight devlopers
 //
 // Permission to use, copy, modify, and distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -19,22 +18,23 @@ import (
 	"os"
 	"strings"
 
-	"github.com/decred/slog"
 	"google.golang.org/grpc/grpclog"
+
+	"github.com/btcsuite/btclog"
 )
 
 // UseLogger sets the logger to use for the gRPC server.
-func UseLogger(l slog.Logger) {
+func UseLogger(l btclog.Logger) {
 	grpclog.SetLogger(logger{l})
 }
 
-// logger uses a slog.Logger to implement the grpclog.Logger interface.
+// logger uses a btclog.Logger to implement the grpclog.Logger interface.
 type logger struct {
-	slog.Logger
+	btclog.Logger
 }
 
 // stripGrpcPrefix removes the package prefix for all logs made to the grpc
-// logger, since these are already included as the slog subsystem name.
+// logger, since these are already included as the btclog subsystem name.
 func stripGrpcPrefix(logstr string) string {
 	return strings.TrimPrefix(logstr, "grpc: ")
 }

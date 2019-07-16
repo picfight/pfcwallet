@@ -1,5 +1,4 @@
 // Copyright (c) 2015-2016 The btcsuite developers
-// Copyright (c) 2016-2017 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,21 +7,22 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"net"
 	"os"
 	"path/filepath"
 
+	"golang.org/x/crypto/ssh/terminal"
+
 	"github.com/jessevdk/go-flags"
-	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcutil"
+	"github.com/picfight/pfcwallet/internal/cfgutil"
+	"github.com/picfight/pfcwallet/netparams"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
@@ -42,73 +42,35 @@ func errContext(err error, context string) error {
 
 // Flags.
 var opts = struct {
-	TestNet               bool    `long:"testnet" description:"Use the test picfight network"`
-	SimNet                bool    `long:"simnet" description:"Use the simulation picfight network"`
-	RPCConnect            string  `short:"c" long:"connect" description:"Hostname[:port] of wallet RPC server"`
-	RPCUsername           string  `short:"u" long:"rpcuser" description:"Wallet RPC username"`
-	RPCPassword           string  `short:"P" long:"rpcpass" description:"Wallet RPC password"`
-	RPCCertificateFile    string  `long:"cafile" description:"Wallet RPC TLS certificate"`
-	FeeRate               float64 `long:"feerate" description:"Transaction fee per kilobyte"`
-	SourceAccount         string  `long:"sourceacct" description:"Account to sweep outputs from"`
-	SourceAddress         string  `long:"sourceaddr" description:"Address to sweep outputs from"`
-	DestinationAccount    string  `long:"destacct" description:"Account to send sweeped outputs to"`
-	DestinationAddress    string  `long:"destaddr" description:"Address to send sweeped outputs to"`
-	RequiredConfirmations int64   `long:"minconf" description:"Required confirmations to include an output"`
-	DryRun                bool    `long:"dryrun" description:"Do not actually send any transactions but output what would have happened"`
+	TestNet3              bool                `long:"testnet" description:"Use the test picfightcoin network (version 3)"`
+	SimNet                bool                `long:"simnet" description:"Use the simulation picfightcoin network"`
+	RPCConnect            string              `short:"c" long:"connect" description:"Hostname[:port] of wallet RPC server"`
+	RPCUsername           string              `short:"u" long:"rpcuser" description:"Wallet RPC username"`
+	RPCCertificateFile    string              `long:"cafile" description:"Wallet RPC TLS certificate"`
+	FeeRate               *cfgutil.AmountFlag `long:"feerate" description:"Transaction fee per kilobyte"`
+	SourceAccount         string              `long:"sourceacct" description:"Account to sweep outputs from"`
+	DestinationAccount    string              `long:"destacct" description:"Account to send sweeped outputs to"`
+	RequiredConfirmations int64               `long:"minconf" description:"Required confirmations to include an output"`
 }{
-	TestNet:               false,
+	TestNet3:              false,
 	SimNet:                false,
 	RPCConnect:            "localhost",
 	RPCUsername:           "",
-	RPCPassword:           "",
 	RPCCertificateFile:    filepath.Join(walletDataDirectory, "rpc.cert"),
-	FeeRate:               txrules.DefaultRelayFeePerKb.ToCoin(),
-	SourceAccount:         "",
-	SourceAddress:         "",
-	DestinationAccount:    "",
-	DestinationAddress:    "",
-	RequiredConfirmations: 2,
-	DryRun:                false,
-}
-
-// normalizeAddress returns the normalized form of the address, adding a default
-// port if necessary.  An error is returned if the address, even without a port,
-// is not valid.
-func normalizeAddress(addr string, defaultPort string) (hostport string, err error) {
-	// If the first SplitHostPort errors because of a missing port and not
-	// for an invalid host, add the port.  If the second SplitHostPort
-	// fails, then a port is not missing and the original error should be
-	// returned.
-	host, port, origErr := net.SplitHostPort(addr)
-	if origErr == nil {
-		return net.JoinHostPort(host, port), nil
-	}
-	addr = net.JoinHostPort(addr, defaultPort)
-	_, _, err = net.SplitHostPort(addr)
-	if err != nil {
-		return "", origErr
-	}
-	return addr, nil
-}
-
-func walletPort(net *chaincfg.Params) string {
-	switch net.Net {
-	case wire.MainNet:
-		return "9110"
-	case wire.TestNet3:
-		return "19110"
-	case wire.SimNet:
-		return "19557"
-	default:
-		return ""
-	}
+	FeeRate:               cfgutil.NewAmountFlag(txrules.DefaultRelayFeePerKb),
+	SourceAccount:         "imported",
+	DestinationAccount:    "default",
+	RequiredConfirmations: 1,
 }
 
 // Parse and validate flags.
 func init() {
 	// Unset localhost defaults if certificate file can not be found.
-	_, err := os.Stat(opts.RPCCertificateFile)
+	certFileExists, err := cfgutil.FileExists(opts.RPCCertificateFile)
 	if err != nil {
+		fatalf("%v", err)
+	}
+	if !certFileExists {
 		opts.RPCConnect = ""
 		opts.RPCCertificateFile = ""
 	}
@@ -118,20 +80,20 @@ func init() {
 		os.Exit(1)
 	}
 
-	if opts.TestNet && opts.SimNet {
-		fatalf("Multiple picfight networks may not be used simultaneously")
+	if opts.TestNet3 && opts.SimNet {
+		fatalf("Multiple picfightcoin networks may not be used simultaneously")
 	}
-	var activeNet = &chaincfg.MainNetParams
-	if opts.TestNet {
-		activeNet = &chaincfg.TestNet3Params
+	var activeNet = &netparams.MainNetParams
+	if opts.TestNet3 {
+		activeNet = &netparams.TestNet3Params
 	} else if opts.SimNet {
-		activeNet = &chaincfg.SimNetParams
+		activeNet = &netparams.SimNetParams
 	}
 
 	if opts.RPCConnect == "" {
 		fatalf("RPC hostname[:port] is required")
 	}
-	rpcConnect, err := normalizeAddress(opts.RPCConnect, walletPort(activeNet))
+	rpcConnect, err := cfgutil.NormalizeAddress(opts.RPCConnect, activeNet.RPCServerPort)
 	if err != nil {
 		fatalf("Invalid RPC network address `%v`: %v", opts.RPCConnect, err)
 	}
@@ -141,28 +103,22 @@ func init() {
 		fatalf("RPC username is required")
 	}
 
-	_, err = os.Stat(opts.RPCCertificateFile)
+	certFileExists, err = cfgutil.FileExists(opts.RPCCertificateFile)
 	if err != nil {
+		fatalf("%v", err)
+	}
+	if !certFileExists {
 		fatalf("RPC certificate file `%s` not found", opts.RPCCertificateFile)
 	}
 
-	if opts.FeeRate > 1 {
-		fatalf("Fee rate `%v/kB` is exceptionally high", opts.FeeRate)
+	if opts.FeeRate.Amount > 1e6 {
+		fatalf("Fee rate `%v/kB` is exceptionally high", opts.FeeRate.Amount)
 	}
-	if opts.FeeRate < 1e-6 {
-		fatalf("Fee rate `%v/kB` is exceptionally low", opts.FeeRate)
+	if opts.FeeRate.Amount < 1e2 {
+		fatalf("Fee rate `%v/kB` is exceptionally low", opts.FeeRate.Amount)
 	}
-	if opts.SourceAccount == "" && opts.SourceAddress == "" {
-		fatalf("A source is required")
-	}
-	if opts.SourceAccount != "" && opts.SourceAccount == opts.DestinationAccount {
+	if opts.SourceAccount == opts.DestinationAccount {
 		fatalf("Source and destination accounts should not be equal")
-	}
-	if opts.DestinationAccount == "" && opts.DestinationAddress == "" {
-		fatalf("A destination is required")
-	}
-	if opts.DestinationAccount != "" && opts.DestinationAddress != "" {
-		fatalf("Destination must be either an account or an address")
 	}
 	if opts.RequiredConfirmations < 0 {
 		fatalf("Required confirmations must be non-negative")
@@ -184,10 +140,10 @@ func (noInputValue) Error() string { return "no input value" }
 // looked up again by the wallet during the call to signrawtransaction.
 func makeInputSource(outputs []pfcjson.ListUnspentResult) txauthor.InputSource {
 	var (
-		totalInputValue   pfcutil.Amount
-		inputs            = make([]*wire.TxIn, 0, len(outputs))
-		redeemScriptSizes = make([]int, 0, len(outputs))
-		sourceErr         error
+		totalInputValue pfcutil.Amount
+		inputs          = make([]*wire.TxIn, 0, len(outputs))
+		inputValues     = make([]pfcutil.Amount, 0, len(outputs))
+		sourceErr       error
 	)
 	for _, output := range outputs {
 		outputAmount, err := pfcutil.NewAmount(output.Amount)
@@ -211,73 +167,35 @@ func makeInputSource(outputs []pfcjson.ListUnspentResult) txauthor.InputSource {
 		previousOutPoint, err := parseOutPoint(&output)
 		if err != nil {
 			sourceErr = fmt.Errorf(
-				"invalid data in listunspent result: %v", err)
+				"invalid data in listunspent result: %v",
+				err)
 			break
 		}
 
-		txIn := wire.NewTxIn(&previousOutPoint, int64(outputAmount), nil)
-		inputs = append(inputs, txIn)
+		inputs = append(inputs, wire.NewTxIn(&previousOutPoint, nil, nil))
+		inputValues = append(inputValues, outputAmount)
 	}
 
 	if sourceErr == nil && totalInputValue == 0 {
 		sourceErr = noInputValue{}
 	}
 
-	return func(pfcutil.Amount) (*txauthor.InputDetail, error) {
-		inputDetail := txauthor.InputDetail{
-			Amount:            totalInputValue,
-			Inputs:            inputs,
-			Scripts:           nil,
-			RedeemScriptSizes: redeemScriptSizes,
+	return func(pfcutil.Amount) (pfcutil.Amount, []*wire.TxIn, []pfcutil.Amount, [][]byte, error) {
+		return totalInputValue, inputs, inputValues, nil, sourceErr
+	}
+}
+
+// makeDestinationScriptSource creates a ChangeSource which is used to receive
+// all correlated previous input value.  A non-change address is created by this
+// function.
+func makeDestinationScriptSource(rpcClient *rpcclient.Client, accountName string) txauthor.ChangeSource {
+	return func() ([]byte, error) {
+		destinationAddress, err := rpcClient.GetNewAddress(accountName)
+		if err != nil {
+			return nil, err
 		}
-		return &inputDetail, sourceErr
+		return txscript.PayToAddrScript(destinationAddress)
 	}
-}
-
-// destinationScriptSourceToAccount is a ChangeSource which is used to receive
-// all correlated previous input value.
-type destinationScriptSourceToAccount struct {
-	accountName string
-	rpcClient   *pfcrpcclient.Client
-}
-
-// Source creates a non-change address.
-func (src *destinationScriptSourceToAccount) Script() ([]byte, uint16, error) {
-	destinationAddress, err := src.rpcClient.GetNewAddress(src.accountName)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	script, err := txscript.PayToAddrScript(destinationAddress)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return script, txscript.DefaultScriptVersion, nil
-}
-
-func (src *destinationScriptSourceToAccount) ScriptSize() int {
-	return 25 // P2PKHPkScriptSize
-}
-
-// destinationScriptSourceToAddress s a ChangeSource which is used to
-// receive all correlated previous input value.
-type destinationScriptSourceToAddress struct {
-	address string
-}
-
-// Source creates a non-change address.
-func (src *destinationScriptSourceToAddress) Script() ([]byte, uint16, error) {
-	destinationAddress, err := pfcutil.DecodeAddress(src.address)
-	if err != nil {
-		return nil, 0, err
-	}
-	script, err := txscript.PayToAddrScript(destinationAddress)
-	return script, txscript.DefaultScriptVersion, err
-}
-
-func (src *destinationScriptSourceToAddress) ScriptSize() int {
-	return 25 // P2PKHPkScriptSize
 }
 
 func main() {
@@ -288,15 +206,9 @@ func main() {
 }
 
 func sweep() error {
-	rpcPassword := opts.RPCPassword
-
-	if rpcPassword == "" {
-		secret, err := promptSecret("Wallet RPC password")
-		if err != nil {
-			return errContext(err, "failed to read RPC password")
-		}
-
-		rpcPassword = secret
+	rpcPassword, err := promptSecret("Wallet RPC password")
+	if err != nil {
+		return errContext(err, "failed to read RPC password")
 	}
 
 	// Open RPC client.
@@ -304,7 +216,7 @@ func sweep() error {
 	if err != nil {
 		return errContext(err, "failed to read RPC certificate")
 	}
-	rpcClient, err := pfcrpcclient.New(&pfcrpcclient.ConnConfig{
+	rpcClient, err := rpcclient.New(&rpcclient.ConnConfig{
 		Host:         opts.RPCConnect,
 		User:         opts.RPCUsername,
 		Pass:         rpcPassword,
@@ -332,20 +244,11 @@ func sweep() error {
 		if unspentOutput.Confirmations < opts.RequiredConfirmations {
 			continue
 		}
-		if opts.SourceAccount != "" && opts.SourceAccount != unspentOutput.Account {
-			continue
-		}
-		if opts.SourceAddress != "" && opts.SourceAddress != unspentOutput.Address {
+		if unspentOutput.Account != opts.SourceAccount {
 			continue
 		}
 		sourceAddressOutputs := sourceOutputs[unspentOutput.Address]
 		sourceOutputs[unspentOutput.Address] = append(sourceAddressOutputs, unspentOutput)
-	}
-
-	for address, outputs := range sourceOutputs {
-		outputNoun := pickNoun(len(outputs), "output", "outputs")
-		fmt.Printf("Found %d matching unspent %s for address %s\n",
-			len(outputs), outputNoun, address)
 	}
 
 	var privatePassphrase string
@@ -363,35 +266,11 @@ func sweep() error {
 		os.Stderr.Write(newlineBytes)
 		numErrors++
 	}
-	feeRate, err := pfcutil.NewAmount(opts.FeeRate)
-	if err != nil {
-		return errContext(err, "invalid fee rate")
-	}
 	for _, previousOutputs := range sourceOutputs {
 		inputSource := makeInputSource(previousOutputs)
-
-		var destinationSourceToAccount *destinationScriptSourceToAccount
-		var destinationSourceToAddress *destinationScriptSourceToAddress
-		var atx *txauthor.AuthoredTx
-		var err error
-
-		if opts.DestinationAccount != "" {
-			destinationSourceToAccount = &destinationScriptSourceToAccount{
-				accountName: opts.DestinationAccount,
-				rpcClient:   rpcClient,
-			}
-			atx, err = txauthor.NewUnsignedTransaction(nil, feeRate,
-				inputSource, destinationSourceToAccount)
-		}
-
-		if opts.DestinationAddress != "" {
-			destinationSourceToAddress = &destinationScriptSourceToAddress{
-				address: opts.DestinationAddress,
-			}
-			atx, err = txauthor.NewUnsignedTransaction(nil, feeRate,
-				inputSource, destinationSourceToAddress)
-		}
-
+		destinationSource := makeDestinationScriptSource(rpcClient, opts.DestinationAccount)
+		tx, err := txauthor.NewUnsignedTransaction(nil, opts.FeeRate.Amount,
+			inputSource, destinationSource)
 		if err != nil {
 			if err != (noInputValue{}) {
 				reportError("Failed to create unsigned transaction: %v", err)
@@ -405,7 +284,7 @@ func sweep() error {
 			reportError("Failed to unlock wallet: %v", err)
 			continue
 		}
-		signedTransaction, complete, err := rpcClient.SignRawTransaction(atx.Tx)
+		signedTransaction, complete, err := rpcClient.SignRawTransaction(tx.Tx)
 		_ = rpcClient.WalletLock()
 		if err != nil {
 			reportError("Failed to sign transaction: %v", err)
@@ -417,21 +296,14 @@ func sweep() error {
 		}
 
 		// Publish the signed sweep transaction.
-		txHash := "DRYRUN"
-		if opts.DryRun {
-			fmt.Printf("DRY RUN: not actually sending transaction\n")
-		} else {
-			hash, err := rpcClient.SendRawTransaction(signedTransaction, false)
-			if err != nil {
-				reportError("Failed to publish transaction: %v", err)
-				continue
-			}
-
-			txHash = hash.String()
+		txHash, err := rpcClient.SendRawTransaction(signedTransaction, false)
+		if err != nil {
+			reportError("Failed to publish transaction: %v", err)
+			continue
 		}
 
-		outputAmount := pfcutil.Amount(atx.Tx.TxOut[0].Value)
-		fmt.Printf("Swept %v to destination with transaction %v\n",
+		outputAmount := pfcutil.Amount(tx.Tx.TxOut[0].Value)
+		fmt.Printf("Swept %v to destination account with transaction %v\n",
 			outputAmount, txHash)
 		totalSwept += outputAmount
 	}
@@ -439,7 +311,7 @@ func sweep() error {
 	numPublished := len(sourceOutputs) - numErrors
 	transactionNoun := pickNoun(numErrors, "transaction", "transactions")
 	if numPublished != 0 {
-		fmt.Printf("Swept %v to destination across %d %s\n",
+		fmt.Printf("Swept %v to destination account across %d %s\n",
 			totalSwept, numPublished, transactionNoun)
 	}
 	if numErrors > 0 {
@@ -461,7 +333,7 @@ func promptSecret(what string) (string, error) {
 }
 
 func saneOutputValue(amount pfcutil.Amount) bool {
-	return amount >= 0 && amount <= pfcutil.MaxAmount
+	return amount >= 0 && amount <= pfcutil.MaxSatoshi
 }
 
 func parseOutPoint(input *pfcjson.ListUnspentResult) (wire.OutPoint, error) {
@@ -469,7 +341,7 @@ func parseOutPoint(input *pfcjson.ListUnspentResult) (wire.OutPoint, error) {
 	if err != nil {
 		return wire.OutPoint{}, err
 	}
-	return wire.OutPoint{Hash: *txHash, Index: input.Vout, Tree: input.Tree}, nil
+	return wire.OutPoint{Hash: *txHash, Index: input.Vout}, nil
 }
 
 func pickNoun(n int, singularForm, pluralForm string) string {

@@ -1,5 +1,4 @@
 // Copyright (c) 2013-2015 The btcsuite developers
-// Copyright (c) 2016-2017 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,34 +10,30 @@ import "github.com/picfight/pfcd/chaincfg"
 // network and test networks.
 type Params struct {
 	*chaincfg.Params
-	JSONRPCClientPort string
-	JSONRPCServerPort string
-	GRPCServerPort    string
+	RPCClientPort string
+	RPCServerPort string
 }
 
 // MainNetParams contains parameters specific running pfcwallet and
 // pfcd on the main network (wire.MainNet).
 var MainNetParams = Params{
-	Params:            &chaincfg.MainNetParams,
-	JSONRPCClientPort: "9709",
-	JSONRPCServerPort: "9110",
-	GRPCServerPort:    "9111",
+	Params:        &chaincfg.MainNetParams,
+	RPCClientPort: "8334",
+	RPCServerPort: "8332",
 }
 
 // TestNet3Params contains parameters specific running pfcwallet and
 // pfcd on the test network (version 3) (wire.TestNet3).
 var TestNet3Params = Params{
-	Params:            &chaincfg.TestNet3Params,
-	JSONRPCClientPort: "19709",
-	JSONRPCServerPort: "19110",
-	GRPCServerPort:    "19111",
+	Params:        &chaincfg.TestNet3Params,
+	RPCClientPort: "18334",
+	RPCServerPort: "18332",
 }
 
 // SimNetParams contains parameters specific to the simulation test network
 // (wire.SimNet).
 var SimNetParams = Params{
-	Params:            &chaincfg.SimNetParams,
-	JSONRPCClientPort: "19556",
-	JSONRPCServerPort: "19557",
-	GRPCServerPort:    "19558",
+	Params:        &chaincfg.SimNetParams,
+	RPCClientPort: "18556",
+	RPCServerPort: "18554",
 }

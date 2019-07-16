@@ -2,12 +2,11 @@ pfcwallet
 =========
 
 [![Build Status](https://travis-ci.org/picfight/pfcwallet.png?branch=master)](https://travis-ci.org/picfight/pfcwallet)
-[![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/picfight/pfcwallet)
-[![Go Report Card](https://goreportcard.com/badge/github.com/picfight/pfcwallet)](https://goreportcard.com/report/github.com/picfight/pfcwallet)
+[![Build status](https://ci.appveyor.com/api/projects/status/88nxvckdj8upqr36/branch/master?svg=true)](https://ci.appveyor.com/project/jrick/pfcwallet/branch/master)
 
-pfcwallet is a daemon handling PicFight wallet functionality.  All interaction
-with the wallet is performed over RPC.
+pfcwallet is a daemon handling picfightcoin wallet functionality for a
+single user.  It acts as both an RPC client to pfcd and an RPC server
+for wallet clients and legacy RPC applications.
 
 Public and private keys are derived using the hierarchical
 deterministic format described by
@@ -28,102 +27,113 @@ does mean they could track all transactions involving your addresses
 and therefore know your exact balance.  In a future release, public data
 encryption will extend to transactions as well.
 
-pfcwallet provides two modes of operation to connect to the PicFight
-network.  The first (and default) is to communicate with a single
-trusted `pfcd` instance using JSON-RPC.  The second is a
-privacy-preserving Simplified Payment Verification (SPV) mode (enabled
-with the `--spv` flag) where the wallet connects either to specified
-peers (with `--spvconnect`) or peers discovered from seeders and other
-peers. Both modes can be switched between with just a restart of the
-wallet.  It is advised to avoid SPV mode for heavily-used wallets
-which require downloading most blocks regardless.
+pfcwallet is not an SPV client and requires connecting to a local or
+remote pfcd instance for asynchronous blockchain queries and
+notifications over websockets.  Full pfcd installation instructions
+can be found [here](https://github.com/picfight/pfcd).  An alternative
+SPV mode that is compatible with pfcd and Picfightcoin Core is planned for
+a future release.
 
-Not all functionality is available when running in SPV mode.  Some of
-these features may become available in future versions, but only if a
-consensus vote passes to activate the required changes.  Currently,
-the following features are disabled or unavailable to SPV wallets:
+Wallet clients can use one of two RPC servers:
 
-  * Voting
-
-  * Revoking tickets before expiry
-
-  * Determining exact number of live and missed tickets (as opposed to
-    simply unspent).
-
-Wallet clients interact with the wallet using one of two RPC servers:
-
-  1. A legacy JSON-RPC server inspired by the Bitcoin Core rpc server
+  1. A legacy JSON-RPC server mostly compatible with Picfightcoin Core
 
      The JSON-RPC server exists to ease the migration of wallet applications
      from Core, but complete compatibility is not guaranteed.  Some portions of
      the API (and especially accounts) have to work differently due to other
      design decisions (mostly due to BIP0044).  However, if you find a
      compatibility issue and feel that it could be reasonably supported, please
-     report an issue.  This server is enabled by default as long as a username
-     and password are provided.
+     report an issue.  This server is enabled by default.
 
-  2. A gRPC server
+  2. An experimental gRPC server
 
      The gRPC server uses a new API built for pfcwallet, but the API is not
-     stabilized.  This server is enabled by default and may be disabled with
-     the config option `--nogrpc`.  If you don't mind applications breaking
-     due to API changes, don't want to deal with issues of the legacy API, or
-     need notifications for changes to the wallet, this is the RPC server to
-     use. The gRPC server is documented [here](./rpc/documentation/README.md).
+     stabilized and the server is feature gated behind a config option
+     (`--experimentalrpclisten`).  If you don't mind applications breaking due
+     to API changes, don't want to deal with issues of the legacy API, or need
+     notifications for changes to the wallet, this is the RPC server to use.
+     The gRPC server is documented [here](./rpc/documentation/README.md).
 
 ## Installation and updating
 
-### Binaries (Windows/Linux/macOS)
+### Windows - MSIs Available
 
-Binary releases are provided for common operating systems and architectures:
+Install the latest MSIs available here:
 
-https://github.com/decred/decred-binaries/releases
+https://github.com/picfight/pfcd/releases
 
-### Build from source (all platforms)
+https://github.com/picfight/pfcwallet/releases
+
+### Windows/Linux/BSD/POSIX - Build from source
 
 Building or updating from source requires the following build dependencies:
 
-- **Go 1.10 or 1.11**
+- **Go 1.5 or 1.6**
 
-  Installation instructions can be found here: https://golang.org/doc/install.
+  Installation instructions can be found here: http://golang.org/doc/install.
   It is recommended to add `$GOPATH/bin` to your `PATH` at this point.
 
-- **Vgo (Go 1.10 only)**
+  **Note:** If you are using Go 1.5, you must manually enable the vendor
+    experiment by setting the `GO15VENDOREXPERIMENT` environment variable to
+    `1`.  This step is not required for Go 1.6.
 
-  The `GO111MODULE` experiment is used to manage project dependencies and
-  provide reproducible builds.  The module experiment is provided by the Go 1.11
-  toolchain, but the Go 1.10 toolchain does not provide any module support.  To
-  perform module-aware builds with Go 1.10,
-  [vgo](https://godoc.org/golang.org/x/vgo) (a drop-in replacement for the go
-  command) must be used instead.
+- **Glide**
 
-To build and install from a checked-out repo, run `go install` in the repo's
-root directory.  Some notes:
+  Glide is used to manage project dependencies and provide reproducible builds.
+  To install:
 
-* Set the `GO111MODULE=on` environment variable if using Go 1.11 and building
-  from within `GOPATH`.
+  `go get -u github.com/Masterminds/glide`
 
-* Replace `go` with `vgo` when using Go 1.10.
+Unfortunately, the use of `glide` prevents a handy tool such as `go get` from
+automatically downloading, building, and installing the source in a single
+command.  Instead, the latest project and dependency sources must be first
+obtained manually with `git` and `glide`, and then `go` is used to build and
+install the project.
 
-* The `pfcwallet` executable will be installed to `$GOPATH/bin`.  `GOPATH`
-  defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
+**Getting the source**:
 
-## Docker
-
-All tests and linters may be run in a docker container using the script
-`run_tests.sh`.  This script defaults to using the current supported version of
-go.  You can run it with the major version of go you would like to use as the
-only arguement to test a previous on a previous version of go (generally decred
-supports the current version of go and the previous one).
+For a first time installation, the project and dependency sources can be
+obtained manually with `git` and `glide` (create directories as needed):
 
 ```
-./run_tests.sh 1.10
+git clone https://github.com/picfight/pfcwallet $GOPATH/src/github.com/picfight/pfcwallet
+cd $GOPATH/src/github.com/picfight/pfcwallet
+glide install
 ```
 
-To run the tests locally without docker:
+To update an existing source tree, pull the latest changes and install the
+matching dependencies:
 
 ```
-./run_tests.sh local
+cd $GOPATH/src/github.com/picfight/pfcwallet
+git pull
+glide install
+```
+
+**Building/Installing**:
+
+The `go` tool is used to build or install (to `GOPATH`) the project.  Some
+example build instructions are provided below (all must run from the `pfcwallet`
+project directory).
+
+To build and install `pfcwallet` and all helper commands (in the `cmd`
+directory) to `$GOPATH/bin/`, as well as installing all compiled packages to
+`$GOPATH/pkg/` (**use this if you are unsure which command to run**):
+
+```
+go install . ./cmd/...
+```
+
+To build a `pfcwallet` executable and install it to `$GOPATH/bin/`:
+
+```
+go install
+```
+
+To build a `pfcwallet` executable and place it in the current directory:
+
+```
+go build
 ```
 
 ## Getting Started
@@ -154,12 +164,20 @@ If everything appears to be working, it is recommended at this point to
 copy the sample pfcd and pfcwallet configurations and update with your
 RPC username and password.
 
+PowerShell (Installed from MSI):
+```
+PS> cp "$env:ProgramFiles\Pfcd Suite\Btcd\sample-pfcd.conf" $env:LOCALAPPDATA\Btcd\pfcd.conf
+PS> cp "$env:ProgramFiles\Pfcd Suite\Btcwallet\sample-pfcwallet.conf" $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+PS> $editor $env:LOCALAPPDATA\Btcd\pfcd.conf
+PS> $editor $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+```
+
 PowerShell (Installed from source):
 ```
-PS> cp $env:GOPATH\src\github.com\decred\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> cp $env:GOPATH\src\github.com\decred\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
-PS> $editor $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> $editor $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
+PS> cp $env:GOPATH\src\github.com\btcsuite\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Btcd\pfcd.conf
+PS> cp $env:GOPATH\src\github.com\btcsuite\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+PS> $editor $env:LOCALAPPDATA\Btcd\pfcd.conf
+PS> $editor $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
 ```
 
 Linux/BSD/POSIX (Installed from source):
@@ -174,6 +192,26 @@ $ $EDITOR ~/.pfcwallet/pfcwallet.conf
 
 The [integrated github issue tracker](https://github.com/picfight/pfcwallet/issues)
 is used for this project.
+
+## GPG Verification Key
+
+All official release tags are signed by Conformal so users can ensure the code
+has not been tampered with and is coming from the btcsuite developers.  To
+verify the signature perform the following:
+
+- Download the public key from the Conformal website at
+  https://opensource.conformal.com/GIT-GPG-KEY-conformal.txt
+
+- Import the public key into your GPG keyring:
+  ```bash
+  gpg --import GIT-GPG-KEY-conformal.txt
+  ```
+
+- Verify the release tag with the following command where `TAG_NAME` is a
+  placeholder for the specific tag:
+  ```bash
+  git tag -v TAG_NAME
+  ```
 
 ## License
 

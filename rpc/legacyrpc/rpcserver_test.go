@@ -1,5 +1,4 @@
 // Copyright (c) 2013-2014 The btcsuite developers
-// Copyright (c) 2015 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -22,25 +21,20 @@ func TestThrottle(t *testing.T) {
 		}),
 	)
 
-	type resp struct {
-		resp *http.Response
-		err  error
-	}
-	responses := make(chan resp, 2)
-	for i := 0; i < cap(responses); i++ {
+	codes := make(chan int, 2)
+	for i := 0; i < cap(codes); i++ {
 		go func() {
-			r, err := http.Get(srv.URL)
-			responses <- resp{r, err}
+			res, err := http.Get(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			codes <- res.StatusCode
 		}()
 	}
 
-	got := make(map[int]int, cap(responses))
-	for i := 0; i < cap(responses); i++ {
-		r := <-responses
-		if r.err != nil {
-			t.Fatal(r.err)
-		}
-		got[r.resp.StatusCode]++
+	got := make(map[int]int, cap(codes))
+	for i := 0; i < cap(codes); i++ {
+		got[<-codes]++
 
 		if i == 0 {
 			close(busy)
