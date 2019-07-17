@@ -13,6 +13,8 @@ import (
 	"github.com/btcsuite/btclog"
 	"github.com/jrick/logrotate/rotator"
 	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcneutrino"
+	"github.com/picfight/pfcwallet/chain"
 	"github.com/picfight/pfcwallet/rpc/legacyrpc"
 	"github.com/picfight/pfcwallet/rpc/rpcserver"
 	"github.com/picfight/pfcwallet/wallet"
@@ -64,9 +66,11 @@ var (
 func init() {
 	wallet.UseLogger(walletLog)
 	wtxmgr.UseLogger(txmgrLog)
+	chain.UseLogger(chainLog)
 	rpcclient.UseLogger(chainLog)
 	rpcserver.UseLogger(grpcLog)
 	legacyrpc.UseLogger(legacyRPCLog)
+	neutrino.UseLogger(btcnLog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.

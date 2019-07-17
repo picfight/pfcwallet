@@ -16,7 +16,7 @@ import (
 	"time"
 
 	flags "github.com/jessevdk/go-flags"
-	"github.com/lightninglabs/neutrino"
+	"github.com/picfight/pfcneutrino"
 	"github.com/picfight/pfcutil"
 	"github.com/picfight/pfcwallet/internal/cfgutil"
 	"github.com/picfight/pfcwallet/internal/legacy/keystore"

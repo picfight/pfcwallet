@@ -14,7 +14,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/lightninglabs/neutrino"
+	"github.com/picfight/pfcneutrino"
 	"github.com/picfight/pfcwallet/chain"
 	"github.com/picfight/pfcwallet/rpc/legacyrpc"
 	"github.com/picfight/pfcwallet/wallet"
