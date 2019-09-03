@@ -1,6 +1,6 @@
 version: "{build}"
 
-clone_folder: c:\projects\src\github.com\btcsuite\pfcwallet
+clone_folder: c:\projects\src\github.com\picfight\pfcwallet
 
 environment:
  PATH: c:\projects\bin;%PATH%

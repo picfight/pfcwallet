@@ -603,7 +603,7 @@ func New(dir string, desc string, passphrase []byte, net *chaincfg.Params,
 	copy(s.desc[:], []byte(desc))
 
 	// Create new root address from key and chaincode.
-	root, err := newRootBtcAddress(s, rootkey, nil, chaincode,
+	root, err := newRootPfcAddress(s, rootkey, nil, chaincode,
 		createdAt)
 	if err != nil {
 		return nil, err
@@ -751,26 +751,26 @@ func (s *Store) writeTo(w io.Writer) (n int64, err error) {
 	var chainedAddrs = make([]io.WriterTo, len(s.chainIdxMap)-1)
 	var importedAddrs []io.WriterTo
 	for _, wAddr := range s.addrMap {
-		switch btcAddr := wAddr.(type) {
+		switch pfcAddr := wAddr.(type) {
 		case *pfcAddress:
 			e := &addrEntry{
-				addr: *btcAddr,
+				addr: *pfcAddr,
 			}
-			copy(e.pubKeyHash160[:], btcAddr.AddrHash())
-			if btcAddr.Imported() {
+			copy(e.pubKeyHash160[:], pfcAddr.AddrHash())
+			if pfcAddr.Imported() {
 				// No order for imported addresses.
 				importedAddrs = append(importedAddrs, e)
-			} else if btcAddr.chainIndex >= 0 {
+			} else if pfcAddr.chainIndex >= 0 {
 				// Chained addresses are sorted.  This is
 				// kind of nice but probably isn't necessary.
-				chainedAddrs[btcAddr.chainIndex] = e
+				chainedAddrs[pfcAddr.chainIndex] = e
 			}
 
 		case *scriptAddress:
 			e := &scriptEntry{
-				script: *btcAddr,
+				script: *pfcAddr,
 			}
-			copy(e.scriptHash160[:], btcAddr.AddrHash())
+			copy(e.scriptHash160[:], pfcAddr.AddrHash())
 			// scripts are always imported
 			importedAddrs = append(importedAddrs, e)
 		}
@@ -1014,7 +1014,7 @@ func (s *Store) NextChainedAddress(bs *BlockStamp) (pfcutil.Address, error) {
 }
 
 func (s *Store) nextChainedAddress(bs *BlockStamp) (pfcutil.Address, error) {
-	addr, err := s.nextChainedBtcAddress(bs)
+	addr, err := s.nextChainedPfcAddress(bs)
 	if err != nil {
 		return nil, err
 	}
@@ -1027,7 +1027,7 @@ func (s *Store) ChangeAddress(bs *BlockStamp) (pfcutil.Address, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	addr, err := s.nextChainedBtcAddress(bs)
+	addr, err := s.nextChainedPfcAddress(bs)
 	if err != nil {
 		return nil, err
 	}
@@ -1038,7 +1038,7 @@ func (s *Store) ChangeAddress(bs *BlockStamp) (pfcutil.Address, error) {
 	return addr.Address(), nil
 }
 
-func (s *Store) nextChainedBtcAddress(bs *BlockStamp) (*pfcAddress, error) {
+func (s *Store) nextChainedPfcAddress(bs *BlockStamp) (*pfcAddress, error) {
 	// Attempt to get address hash of next chained address.
 	nextAPKH, ok := s.chainIdxMap[s.highestUsed+1]
 	if !ok {
@@ -1067,14 +1067,14 @@ func (s *Store) nextChainedBtcAddress(bs *BlockStamp) (*pfcAddress, error) {
 		return nil, errors.New("cannot find generated address")
 	}
 
-	btcAddr, ok := addr.(*pfcAddress)
+	pfcAddr, ok := addr.(*pfcAddress)
 	if !ok {
 		return nil, errors.New("found non-pubkey chained address")
 	}
 
 	s.highestUsed++
 
-	return btcAddr, nil
+	return pfcAddr, nil
 }
 
 // LastChainedAddress returns the most recently requested chained
@@ -1116,7 +1116,7 @@ func (s *Store) extendUnlocked(bs *BlockStamp) error {
 	if err != nil {
 		return err
 	}
-	newAddr, err := newBtcAddress(s, privkey, nil, bs, true)
+	newAddr, err := newPfcAddress(s, privkey, nil, bs, true)
 	if err != nil {
 		return err
 	}
@@ -1158,7 +1158,7 @@ func (s *Store) extendLocked(bs *BlockStamp) error {
 	if err != nil {
 		return err
 	}
-	newaddr, err := newBtcAddressWithoutPrivkey(s, nextPubkey, nil, bs)
+	newaddr, err := newPfcAddressWithoutPrivkey(s, nextPubkey, nil, bs)
 	if err != nil {
 		return err
 	}
@@ -1248,12 +1248,12 @@ func (s *Store) Address(a pfcutil.Address) (WalletAddress, error) {
 	defer s.mtx.RUnlock()
 
 	// Look up address by address hash.
-	btcaddr, ok := s.addrMap[getAddressKey(a)]
+	pfcaddr, ok := s.addrMap[getAddressKey(a)]
 	if !ok {
 		return nil, ErrAddressNotFound
 	}
 
-	return btcaddr, nil
+	return pfcaddr, nil
 }
 
 // Net returns the picfightcoin network parameters for this key store.
@@ -1414,29 +1414,29 @@ func (s *Store) ImportPrivateKey(wif *pfcutil.WIF, bs *BlockStamp) (pfcutil.Addr
 
 	// Create new address with this private key.
 	privKey := wif.PrivKey.Serialize()
-	btcaddr, err := newBtcAddress(s, privKey, nil, bs, wif.CompressPubKey)
+	pfcaddr, err := newPfcAddress(s, privKey, nil, bs, wif.CompressPubKey)
 	if err != nil {
 		return nil, err
 	}
-	btcaddr.chainIndex = importedKeyChainIdx
+	pfcaddr.chainIndex = importedKeyChainIdx
 
 	// Mark as unsynced if import height is below currently-synced
 	// height.
 	if len(s.recent.hashes) != 0 && bs.Height < s.recent.lastHeight {
-		btcaddr.flags.unsynced = true
+		pfcaddr.flags.unsynced = true
 	}
 
 	// Encrypt imported address with the derived AES key.
-	if err = btcaddr.encrypt(s.secret); err != nil {
+	if err = pfcaddr.encrypt(s.secret); err != nil {
 		return nil, err
 	}
 
-	addr := btcaddr.Address()
+	addr := pfcaddr.Address()
 	// Add address to key store's bookkeeping structures.  Adding to
 	// the map will result in the imported address being serialized
 	// on the next WriteTo call.
-	s.addrMap[getAddressKey(addr)] = btcaddr
-	s.importedAddrs = append(s.importedAddrs, btcaddr)
+	s.addrMap[getAddressKey(addr)] = pfcaddr
+	s.importedAddrs = append(s.importedAddrs, pfcaddr)
 
 	// Create and return address.
 	return addr, nil
@@ -1539,9 +1539,9 @@ func (s *Store) ExportWatchingWallet() (*Store, error) {
 	for apkh, addr := range s.addrMap {
 		if !addr.Imported() {
 			// Must be a pfcAddress if !imported.
-			btcAddr := addr.(*pfcAddress)
+			pfcAddr := addr.(*pfcAddress)
 
-			ws.chainIdxMap[btcAddr.chainIndex] =
+			ws.chainIdxMap[pfcAddr.chainIndex] =
 				addr.Address()
 		}
 		apkhCopy := apkh
@@ -2132,15 +2132,15 @@ type PubKeyAddress interface {
 	ExportPrivKey() (*pfcutil.WIF, error)
 }
 
-// newBtcAddress initializes and returns a new address.  privkey must
+// newPfcAddress initializes and returns a new address.  privkey must
 // be 32 bytes.  iv must be 16 bytes, or nil (in which case it is
 // randomly generated).
-func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed bool) (addr *pfcAddress, err error) {
+func newPfcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed bool) (addr *pfcAddress, err error) {
 	if len(privkey) != 32 {
 		return nil, errors.New("private key is not 32 bytes")
 	}
 
-	addr, err = newBtcAddressWithoutPrivkey(wallet,
+	addr, err = newPfcAddressWithoutPrivkey(wallet,
 		pubkeyFromPrivkey(privkey, compressed), iv, bs)
 	if err != nil {
 		return nil, err
@@ -2153,11 +2153,11 @@ func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed
 	return addr, nil
 }
 
-// newBtcAddressWithoutPrivkey initializes and returns a new address with an
+// newPfcAddressWithoutPrivkey initializes and returns a new address with an
 // unknown (at the time) private key that must be found later.  pubkey must be
 // 33 or 65 bytes, and iv must be 16 bytes or empty (in which case it is
 // randomly generated).
-func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (addr *pfcAddress, err error) {
+func newPfcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (addr *pfcAddress, err error) {
 	var compressed bool
 	switch n := len(pubkey); n {
 	case pfcec.PubKeyBytesLenCompressed:
@@ -2207,10 +2207,10 @@ func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (a
 	return addr, nil
 }
 
-// newRootBtcAddress generates a new address, also setting the
+// newRootPfcAddress generates a new address, also setting the
 // chaincode and chain index to represent this address as a root
 // address.
-func newRootBtcAddress(s *Store, privKey, iv, chaincode []byte,
+func newRootPfcAddress(s *Store, privKey, iv, chaincode []byte,
 	bs *BlockStamp) (addr *pfcAddress, err error) {
 
 	if len(chaincode) != 32 {
@@ -2219,7 +2219,7 @@ func newRootBtcAddress(s *Store, privKey, iv, chaincode []byte,
 
 	// Create new pfcAddress with provided inputs.  This will
 	// always use a compressed pubkey.
-	addr, err = newBtcAddress(s, privKey, iv, bs, true)
+	addr, err = newPfcAddress(s, privKey, iv, bs, true)
 	if err != nil {
 		return nil, err
 	}

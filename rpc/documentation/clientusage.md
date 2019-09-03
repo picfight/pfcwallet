@@ -248,7 +248,7 @@ namespace Example
             // certificates (required by pfcwallet).
             Environment.SetEnvironmentVariable("GRPC_SSL_CIPHER_SUITES", "HIGH+ECDSA");
 
-            var walletAppData = Portability.LocalAppData(Environment.OSVersion.Platform, "Btcwallet");
+            var walletAppData = Portability.LocalAppData(Environment.OSVersion.Platform, "Pfcwallet");
             var walletTlsCertFile = Path.Combine(walletAppData, "rpc.cert");
             var cert = await FileUtils.ReadFileAsync(walletTlsCertFile);
             var channel = new Channel("localhost:18332", new SslCredentials(cert));
@@ -359,10 +359,10 @@ var walletrpc = protoDescriptor.walletrpc;
 
 var certPath = path.join(process.env.HOME, '.pfcwallet', 'rpc.cert');
 if (os.platform == 'win32') {
-    certPath = path.join(process.env.LOCALAPPDATA, 'Btcwallet', 'rpc.cert');
+    certPath = path.join(process.env.LOCALAPPDATA, 'Pfcwallet', 'rpc.cert');
 } else if (os.platform == 'darwin') {
     certPath = path.join(process.env.HOME, 'Library', 'Application Support',
-        'Btcwallet', 'rpc.cert');
+        'Pfcwallet', 'rpc.cert');
 }
 
 var cert = fs.readFileSync(certPath);
@@ -418,10 +418,10 @@ def main():
 
     cert_file_path = os.path.join(os.environ['HOME'], '.pfcwallet', 'rpc.cert')
     if platform.system() == 'Windows':
-        cert_file_path = os.path.join(os.environ['LOCALAPPDATA'], "Btcwallet", "rpc.cert")
+        cert_file_path = os.path.join(os.environ['LOCALAPPDATA'], "Pfcwallet", "rpc.cert")
     elif platform.system() == 'Darwin':
         cert_file_path = os.path.join(os.environ['HOME'], 'Library', 'Application Support',
-                                      'Btcwallet', 'rpc.cert')
+                                      'Pfcwallet', 'rpc.cert')
 
     with open(cert_file_path, 'r') as f:
         cert = f.read()

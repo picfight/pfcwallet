@@ -167,17 +167,17 @@ RPC username and password.
 PowerShell (Installed from MSI):
 ```
 PS> cp "$env:ProgramFiles\Pfcd Suite\Pfcd\sample-pfcd.conf" $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> cp "$env:ProgramFiles\Pfcd Suite\Btcwallet\sample-pfcwallet.conf" $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+PS> cp "$env:ProgramFiles\Pfcd Suite\Pfcwallet\sample-pfcwallet.conf" $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 PS> $editor $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> $editor $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+PS> $editor $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 ```
 
 PowerShell (Installed from source):
 ```
 PS> cp $env:GOPATH\src\github.com\picfight\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> cp $env:GOPATH\src\github.com\btcsuite\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+PS> cp $env:GOPATH\src\github.com\picfight\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 PS> $editor $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> $editor $env:LOCALAPPDATA\Btcwallet\pfcwallet.conf
+PS> $editor $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 ```
 
 Linux/BSD/POSIX (Installed from source):

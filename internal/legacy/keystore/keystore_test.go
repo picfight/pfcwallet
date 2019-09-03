@@ -46,7 +46,7 @@ func TestPfcAddressSerializer(t *testing.T) {
 		t.Error(err.Error())
 		return
 	}
-	addr, err := newBtcAddress(fakeWallet, privKey, nil,
+	addr, err := newPfcAddress(fakeWallet, privKey, nil,
 		makeBS(0), true)
 	if err != nil {
 		t.Error(err.Error())
