@@ -65,7 +65,7 @@ func TestPfcAddressSerializer(t *testing.T) {
 		return
 	}
 
-	var readAddr btcAddress
+	var readAddr pfcAddress
 	readAddr.store = fakeWallet
 	_, err = readAddr.ReadFrom(buf)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestPfcAddressSerializer(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(addr, &readAddr) {
-		t.Error("Original and read btcAddress differ.")
+		t.Error("Original and read pfcAddress differ.")
 	}
 }
 
@@ -109,7 +109,7 @@ func TestScriptAddressSerializer(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(addr, &readAddr) {
-		t.Error("Original and read btcAddress differ.")
+		t.Error("Original and read pfcAddress differ.")
 	}
 }
 
@@ -533,7 +533,7 @@ func TestWatchingWalletExport(t *testing.T) {
 	}
 	for apkh, waddr := range ww.addrMap {
 		switch addr := waddr.(type) {
-		case *btcAddress:
+		case *pfcAddress:
 			if addr.flags.encrypted {
 				t.Errorf("Chained address should not be encrypted (nothing to encrypt)")
 				return

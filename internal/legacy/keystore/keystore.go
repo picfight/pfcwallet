@@ -529,7 +529,7 @@ type Store struct {
 	desc         [256]byte
 	highestUsed  int64
 	kdfParams    kdfParameters
-	keyGenerator btcAddress
+	keyGenerator pfcAddress
 
 	// These are non-standard and fit in the extra 1024 bytes between the
 	// root address and the appended entries.
@@ -752,7 +752,7 @@ func (s *Store) writeTo(w io.Writer) (n int64, err error) {
 	var importedAddrs []io.WriterTo
 	for _, wAddr := range s.addrMap {
 		switch btcAddr := wAddr.(type) {
-		case *btcAddress:
+		case *pfcAddress:
 			e := &addrEntry{
 				addr: *btcAddr,
 			}
@@ -935,7 +935,7 @@ func (s *Store) Lock() (err error) {
 
 	// Remove clear text private keys from all address entries.
 	for _, addr := range s.addrMap {
-		if baddr, ok := addr.(*btcAddress); ok {
+		if baddr, ok := addr.(*pfcAddress); ok {
 			_ = baddr.lock()
 		}
 	}
@@ -961,8 +961,8 @@ func (s *Store) ChangePassphrase(new []byte) error {
 	newkey := kdf(new, &s.kdfParams)
 
 	for _, wa := range s.addrMap {
-		// Only btcAddresses curently have private keys.
-		a, ok := wa.(*btcAddress)
+		// Only pfcAddresses curently have private keys.
+		a, ok := wa.(*pfcAddress)
 		if !ok {
 			continue
 		}
@@ -1038,7 +1038,7 @@ func (s *Store) ChangeAddress(bs *BlockStamp) (pfcutil.Address, error) {
 	return addr.Address(), nil
 }
 
-func (s *Store) nextChainedBtcAddress(bs *BlockStamp) (*btcAddress, error) {
+func (s *Store) nextChainedBtcAddress(bs *BlockStamp) (*pfcAddress, error) {
 	// Attempt to get address hash of next chained address.
 	nextAPKH, ok := s.chainIdxMap[s.highestUsed+1]
 	if !ok {
@@ -1067,7 +1067,7 @@ func (s *Store) nextChainedBtcAddress(bs *BlockStamp) (*btcAddress, error) {
 		return nil, errors.New("cannot find generated address")
 	}
 
-	btcAddr, ok := addr.(*btcAddress)
+	btcAddr, ok := addr.(*pfcAddress)
 	if !ok {
 		return nil, errors.New("found non-pubkey chained address")
 	}
@@ -1101,7 +1101,7 @@ func (s *Store) extendUnlocked(bs *BlockStamp) error {
 		return ErrLocked
 	}
 
-	lastAddr, ok := waddr.(*btcAddress)
+	lastAddr, ok := waddr.(*pfcAddress)
 	if !ok {
 		return errors.New("found non-pubkey chained address")
 	}
@@ -1147,7 +1147,7 @@ func (s *Store) extendLocked(bs *BlockStamp) error {
 		return errors.New("expected last chained address not found")
 	}
 
-	addr, ok := waddr.(*btcAddress)
+	addr, ok := waddr.(*pfcAddress)
 	if !ok {
 		return errors.New("found non-pubkey chained address")
 	}
@@ -1192,7 +1192,7 @@ func (s *Store) createMissingPrivateKeys() error {
 		return ErrLocked
 	}
 
-	prevAddr, ok := prevWAddr.(*btcAddress)
+	prevAddr, ok := prevWAddr.(*pfcAddress)
 	if !ok {
 		return errors.New("found non-pubkey chained address")
 	}
@@ -1218,7 +1218,7 @@ func (s *Store) createMissingPrivateKeys() error {
 			break
 		}
 		waddr := s.addrMap[getAddressKey(apkh)]
-		addr, ok := waddr.(*btcAddress)
+		addr, ok := waddr.(*pfcAddress)
 		if !ok {
 			return errors.New("found non-pubkey chained address")
 		}
@@ -1528,7 +1528,7 @@ func (s *Store) ExportWatchingWallet() (*Store, error) {
 	}
 
 	kgwc := s.keyGenerator.watchingCopy(ws)
-	ws.keyGenerator = *(kgwc.(*btcAddress))
+	ws.keyGenerator = *(kgwc.(*pfcAddress))
 	if len(s.recent.hashes) != 0 {
 		ws.recent.hashes = make([]*chainhash.Hash, 0, len(s.recent.hashes))
 		for _, hash := range s.recent.hashes {
@@ -1538,8 +1538,8 @@ func (s *Store) ExportWatchingWallet() (*Store, error) {
 	}
 	for apkh, addr := range s.addrMap {
 		if !addr.Imported() {
-			// Must be a btcAddress if !imported.
-			btcAddr := addr.(*btcAddress)
+			// Must be a pfcAddress if !imported.
+			btcAddr := addr.(*pfcAddress)
 
 			ws.chainIdxMap[btcAddr.chainIndex] =
 				addr.Address()
@@ -2040,7 +2040,7 @@ type walletAddress interface {
 	setSyncStatus(SyncStatus)
 }
 
-type btcAddress struct {
+type pfcAddress struct {
 	store             *Store
 	address           pfcutil.Address
 	flags             addrFlags
@@ -2135,7 +2135,7 @@ type PubKeyAddress interface {
 // newBtcAddress initializes and returns a new address.  privkey must
 // be 32 bytes.  iv must be 16 bytes, or nil (in which case it is
 // randomly generated).
-func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed bool) (addr *btcAddress, err error) {
+func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed bool) (addr *pfcAddress, err error) {
 	if len(privkey) != 32 {
 		return nil, errors.New("private key is not 32 bytes")
 	}
@@ -2157,7 +2157,7 @@ func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed
 // unknown (at the time) private key that must be found later.  pubkey must be
 // 33 or 65 bytes, and iv must be 16 bytes or empty (in which case it is
 // randomly generated).
-func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (addr *btcAddress, err error) {
+func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (addr *pfcAddress, err error) {
 	var compressed bool
 	switch n := len(pubkey); n {
 	case pfcec.PubKeyBytesLenCompressed:
@@ -2186,7 +2186,7 @@ func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (a
 		return nil, err
 	}
 
-	addr = &btcAddress{
+	addr = &pfcAddress{
 		flags: addrFlags{
 			hasPrivKey:              false,
 			hasPubKey:               true,
@@ -2211,13 +2211,13 @@ func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (a
 // chaincode and chain index to represent this address as a root
 // address.
 func newRootBtcAddress(s *Store, privKey, iv, chaincode []byte,
-	bs *BlockStamp) (addr *btcAddress, err error) {
+	bs *BlockStamp) (addr *pfcAddress, err error) {
 
 	if len(chaincode) != 32 {
 		return nil, errors.New("chaincode is not 32 bytes")
 	}
 
-	// Create new btcAddress with provided inputs.  This will
+	// Create new pfcAddress with provided inputs.  This will
 	// always use a compressed pubkey.
 	addr, err = newBtcAddress(s, privKey, iv, bs, true)
 	if err != nil {
@@ -2234,8 +2234,8 @@ func newRootBtcAddress(s *Store, privKey, iv, chaincode []byte,
 // verifies the signature with the parsed public key.  If either of these
 // steps fail, the keypair generation failed and any funds sent to this
 // address will be unspendable.  This step requires an unencrypted or
-// unlocked btcAddress.
-func (a *btcAddress) verifyKeypairs() error {
+// unlocked pfcAddress.
+func (a *pfcAddress) verifyKeypairs() error {
 	if len(a.privKeyCT) != 32 {
 		return errors.New("private key unavailable")
 	}
@@ -2259,7 +2259,7 @@ func (a *btcAddress) verifyKeypairs() error {
 }
 
 // ReadFrom reads an encrypted address from an io.Reader.
-func (a *btcAddress) ReadFrom(r io.Reader) (n int64, err error) {
+func (a *pfcAddress) ReadFrom(r io.Reader) (n int64, err error) {
 	var read int64
 
 	// Checksums
@@ -2339,7 +2339,7 @@ func (a *btcAddress) ReadFrom(r io.Reader) (n int64, err error) {
 	return n, nil
 }
 
-func (a *btcAddress) WriteTo(w io.Writer) (n int64, err error) {
+func (a *pfcAddress) WriteTo(w io.Writer) (n int64, err error) {
 	var written int64
 
 	pubKey := a.pubKeyBytes()
@@ -2382,7 +2382,7 @@ func (a *btcAddress) WriteTo(w io.Writer) (n int64, err error) {
 // encrypt attempts to encrypt an address's clear text private key,
 // failing if the address is already encrypted or if the private key is
 // not 32 bytes.  If successful, the encryption flag is set.
-func (a *btcAddress) encrypt(key []byte) error {
+func (a *pfcAddress) encrypt(key []byte) error {
 	if a.flags.encrypted {
 		return ErrAlreadyEncrypted
 	}
@@ -2405,7 +2405,7 @@ func (a *btcAddress) encrypt(key []byte) error {
 
 // lock removes the reference this address holds to its clear text
 // private key.  This function fails if the address is not encrypted.
-func (a *btcAddress) lock() error {
+func (a *pfcAddress) lock() error {
 	if !a.flags.encrypted {
 		return errors.New("unable to lock unencrypted address")
 	}
@@ -2420,7 +2420,7 @@ func (a *btcAddress) lock() error {
 // incorrect.  The returned clear text private key will always be a copy
 // that may be safely used by the caller without worrying about it being
 // zeroed during an address lock.
-func (a *btcAddress) unlock(key []byte) (privKeyCT []byte, err error) {
+func (a *pfcAddress) unlock(key []byte) (privKeyCT []byte, err error) {
 	if !a.flags.encrypted {
 		return nil, errors.New("unable to unlock unencrypted address")
 	}
@@ -2458,7 +2458,7 @@ func (a *btcAddress) unlock(key []byte) (privKeyCT []byte, err error) {
 // changeEncryptionKey re-encrypts the private keys for an address
 // with a new AES encryption key.  oldkey must be the old AES encryption key
 // and is used to decrypt the private key.
-func (a *btcAddress) changeEncryptionKey(oldkey, newkey []byte) error {
+func (a *pfcAddress) changeEncryptionKey(oldkey, newkey []byte) error {
 	// Address must have a private key and be encrypted to continue.
 	if !a.flags.hasPrivKey {
 		return errors.New("no private key")
@@ -2488,43 +2488,43 @@ func (a *btcAddress) changeEncryptionKey(oldkey, newkey []byte) error {
 }
 
 // Address returns the pub key address, implementing AddressInfo.
-func (a *btcAddress) Address() pfcutil.Address {
+func (a *pfcAddress) Address() pfcutil.Address {
 	return a.address
 }
 
 // AddrHash returns the pub key hash, implementing WalletAddress.
-func (a *btcAddress) AddrHash() string {
+func (a *pfcAddress) AddrHash() string {
 	return string(a.address.ScriptAddress())
 }
 
 // FirstBlock returns the first block the address is seen in, implementing
 // AddressInfo.
-func (a *btcAddress) FirstBlock() int32 {
+func (a *pfcAddress) FirstBlock() int32 {
 	return a.firstBlock
 }
 
 // Imported returns the pub if the address was imported, or a chained address,
 // implementing AddressInfo.
-func (a *btcAddress) Imported() bool {
+func (a *pfcAddress) Imported() bool {
 	return a.chainIndex == importedKeyChainIdx
 }
 
 // Change returns true if the address was created as a change address,
 // implementing AddressInfo.
-func (a *btcAddress) Change() bool {
+func (a *pfcAddress) Change() bool {
 	return a.flags.change
 }
 
 // Compressed returns true if the address backing key is compressed,
 // implementing AddressInfo.
-func (a *btcAddress) Compressed() bool {
+func (a *pfcAddress) Compressed() bool {
 	return a.flags.compressed
 }
 
 // SyncStatus returns a SyncStatus type for how the address is currently
 // synced.  For an Unsynced type, the value is the recorded first seen
 // block height of the address.
-func (a *btcAddress) SyncStatus() SyncStatus {
+func (a *pfcAddress) SyncStatus() SyncStatus {
 	switch {
 	case a.flags.unsynced && !a.flags.partialSync:
 		return Unsynced(a.firstBlock)
@@ -2537,11 +2537,11 @@ func (a *btcAddress) SyncStatus() SyncStatus {
 
 // PubKey returns the hex encoded pubkey for the address. Implementing
 // PubKeyAddress.
-func (a *btcAddress) PubKey() *pfcec.PublicKey {
+func (a *pfcAddress) PubKey() *pfcec.PublicKey {
 	return a.pubKey
 }
 
-func (a *btcAddress) pubKeyBytes() []byte {
+func (a *pfcAddress) pubKeyBytes() []byte {
 	if a.Compressed() {
 		return a.pubKey.SerializeCompressed()
 	}
@@ -2550,13 +2550,13 @@ func (a *btcAddress) pubKeyBytes() []byte {
 
 // ExportPubKey returns the public key associated with the address serialised as
 // a hex encoded string. Implemnts PubKeyAddress
-func (a *btcAddress) ExportPubKey() string {
+func (a *pfcAddress) ExportPubKey() string {
 	return hex.EncodeToString(a.pubKeyBytes())
 }
 
 // PrivKey implements PubKeyAddress by returning the private key, or an error
 // if the key store is locked, watching only or the private key is missing.
-func (a *btcAddress) PrivKey() (*pfcec.PrivateKey, error) {
+func (a *pfcAddress) PrivKey() (*pfcec.PrivateKey, error) {
 	if a.store.flags.watchingOnly {
 		return nil, ErrWatchingOnly
 	}
@@ -2586,7 +2586,7 @@ func (a *btcAddress) PrivKey() (*pfcec.PrivateKey, error) {
 
 // ExportPrivKey exports the private key as a WIF for encoding as a string
 // in the Wallet Import Formt.
-func (a *btcAddress) ExportPrivKey() (*pfcutil.WIF, error) {
+func (a *pfcAddress) ExportPrivKey() (*pfcutil.WIF, error) {
 	pk, err := a.PrivKey()
 	if err != nil {
 		return nil, err
@@ -2606,8 +2606,8 @@ func (a *btcAddress) ExportPrivKey() (*pfcutil.WIF, error) {
 // watchingCopy creates a copy of an address without a private key.
 // This is used to fill a watching a key store with addresses from a
 // normal key store.
-func (a *btcAddress) watchingCopy(s *Store) walletAddress {
-	return &btcAddress{
+func (a *pfcAddress) watchingCopy(s *Store) walletAddress {
+	return &pfcAddress{
 		store:   s,
 		address: a.address,
 		flags: addrFlags{
@@ -2632,7 +2632,7 @@ func (a *btcAddress) watchingCopy(s *Store) walletAddress {
 
 // setSyncStatus sets the address flags and possibly the partial sync height
 // depending on the type of s.
-func (a *btcAddress) setSyncStatus(s SyncStatus) {
+func (a *pfcAddress) setSyncStatus(s SyncStatus) {
 	switch e := s.(type) {
 	case Unsynced:
 		a.flags.unsynced = true
@@ -2917,7 +2917,7 @@ func (sa *scriptAddress) WriteTo(w io.Writer) (n int64, err error) {
 	return n, nil
 }
 
-// address returns a pfcutil.AddressScriptHash for a btcAddress.
+// address returns a pfcutil.AddressScriptHash for a pfcAddress.
 func (sa *scriptAddress) Address() pfcutil.Address {
 	return sa.address
 }
@@ -3155,7 +3155,7 @@ func (params *kdfParameters) ReadFrom(r io.Reader) (n int64, err error) {
 
 type addrEntry struct {
 	pubKeyHash160 [ripemd160.Size]byte
-	addr          btcAddress
+	addr          pfcAddress
 }
 
 func (e *addrEntry) WriteTo(w io.Writer) (n int64, err error) {
@@ -3173,7 +3173,7 @@ func (e *addrEntry) WriteTo(w io.Writer) (n int64, err error) {
 	}
 	n += written
 
-	// Write btcAddress
+	// Write pfcAddress
 	written, err = e.addr.WriteTo(w)
 	n += written
 	return n, err
@@ -3213,7 +3213,7 @@ func (e *scriptEntry) WriteTo(w io.Writer) (n int64, err error) {
 	}
 	n += written
 
-	// Write btcAddress
+	// Write pfcAddress
 	written, err = e.script.WriteTo(w)
 	n += written
 	return n, err
