@@ -6,6 +6,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/jessevdk/go-flags"
+	"github.com/picfight/pfcutil"
+	"github.com/picfight/pfcwallet/internal/cfgutil"
+	"github.com/picfight/pfcwallet/internal/legacy/keystore"
+	"github.com/picfight/pfcwallet/netparams"
+	"github.com/picfight/pfcwallet/wallet"
 	"net"
 	"os"
 	"os/user"
@@ -13,15 +19,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"time"
-
-	flags "github.com/jessevdk/go-flags"
-	"github.com/picfight/pfcneutrino"
-	"github.com/picfight/pfcutil"
-	"github.com/picfight/pfcwallet/internal/cfgutil"
-	"github.com/picfight/pfcwallet/internal/legacy/keystore"
-	"github.com/picfight/pfcwallet/netparams"
-	"github.com/picfight/pfcwallet/wallet"
 )
 
 const (
@@ -71,14 +68,6 @@ type config struct {
 	Proxy            string                  `long:"proxy" description:"Connect via SOCKS5 proxy (eg. 127.0.0.1:9050)"`
 	ProxyUser        string                  `long:"proxyuser" description:"Username for proxy server"`
 	ProxyPass        string                  `long:"proxypass" default-mask:"-" description:"Password for proxy server"`
-
-	// SPV client options
-	UseSPV       bool          `long:"usespv" description:"Enables the experimental use of SPV rather than RPC for chain synchronization"`
-	AddPeers     []string      `short:"a" long:"addpeer" description:"Add a peer to connect with at startup"`
-	ConnectPeers []string      `long:"connect" description:"Connect only to the specified peers at startup"`
-	MaxPeers     int           `long:"maxpeers" description:"Max number of inbound and outbound peers"`
-	BanDuration  time.Duration `long:"banduration" description:"How long to ban misbehaving peers.  Valid time units are {s, m, h}.  Minimum 1 second"`
-	BanThreshold uint32        `long:"banthreshold" description:"Maximum allowed ban score before disconnecting and banning misbehaving peers."`
 
 	// RPC server options
 	//
@@ -267,12 +256,6 @@ func loadConfig() (*config, []string, error) {
 		LegacyRPCMaxClients:    defaultRPCMaxClients,
 		LegacyRPCMaxWebsockets: defaultRPCMaxWebsockets,
 		DataDir:                cfgutil.NewExplicitString(defaultAppDataDir),
-		UseSPV:                 false,
-		AddPeers:               []string{},
-		ConnectPeers:           []string{},
-		MaxPeers:               neutrino.MaxPeers,
-		BanDuration:            neutrino.BanDuration,
-		BanThreshold:           neutrino.BanThreshold,
 	}
 
 	// Pre-parse the command line options to see if an alternative config
@@ -501,11 +484,7 @@ func loadConfig() (*config, []string, error) {
 		"::1":       {},
 	}
 
-	if cfg.UseSPV {
-		neutrino.MaxPeers = cfg.MaxPeers
-		neutrino.BanDuration = cfg.BanDuration
-		neutrino.BanThreshold = cfg.BanThreshold
-	} else {
+	{
 		if cfg.RPCConnect == "" {
 			cfg.RPCConnect = net.JoinHostPort("localhost", activeNet.RPCClientPort)
 		}
