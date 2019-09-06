@@ -2178,12 +2178,12 @@ func (w *Wallet) GetTransactions(startBlock, endBlock *BlockIdentifier, cancel <
 				if err != nil {
 					return nil, err
 				}
-			case *chain.NeutrinoClient:
-				var err error
-				start, err = client.GetBlockHeight(startBlock.hash)
-				if err != nil {
-					return nil, err
-				}
+			//case *chain.NeutrinoClient:
+				//var err error
+				//start, err = client.GetBlockHeight(startBlock.hash)
+				//if err != nil {
+				//	return nil, err
+				//}
 			}
 		}
 	}
