@@ -112,6 +112,13 @@ glide install
 
 **Building/Installing**:
 
+```
+set GO111MODULE=on
+go fmt ./...
+go build ./...
+go test ./...
+```
+
 The `go` tool is used to build or install (to `GOPATH`) the project.  Some
 example build instructions are provided below (all must run from the `pfcwallet`
 project directory).
@@ -122,18 +129,6 @@ directory) to `$GOPATH/bin/`, as well as installing all compiled packages to
 
 ```
 go install . ./cmd/...
-```
-
-To build a `pfcwallet` executable and install it to `$GOPATH/bin/`:
-
-```
-go install
-```
-
-To build a `pfcwallet` executable and place it in the current directory:
-
-```
-go build
 ```
 
 ## Getting Started
