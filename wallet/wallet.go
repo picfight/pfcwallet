@@ -2197,12 +2197,12 @@ func (w *Wallet) GetTransactions(startBlock, endBlock *BlockIdentifier, cancel <
 			switch client := chainClient.(type) {
 			case *chain.RPCClient:
 				endResp = client.GetBlockVerboseTxAsync(endBlock.hash)
-			case *chain.NeutrinoClient:
-				var err error
-				end, err = client.GetBlockHeight(endBlock.hash)
-				if err != nil {
-					return nil, err
-				}
+			//case *chain.NeutrinoClient:
+			//	var err error
+			//	end, err = client.GetBlockHeight(endBlock.hash)
+			//	if err != nil {
+			//		return nil, err
+			//	}
 			}
 		}
 	}
