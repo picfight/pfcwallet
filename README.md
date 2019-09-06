@@ -30,9 +30,7 @@ encryption will extend to transactions as well.
 pfcwallet is not an SPV client and requires connecting to a local or
 remote pfcd instance for asynchronous blockchain queries and
 notifications over websockets.  Full pfcd installation instructions
-can be found [here](https://github.com/picfight/pfcd).  An alternative
-SPV mode that is compatible with pfcd and Picfightcoin Core is planned for
-a future release.
+can be found [here](https://github.com/picfight/pfcd).
 
 Wallet clients can use one of two RPC servers:
 
