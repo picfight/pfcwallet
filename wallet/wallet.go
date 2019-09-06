@@ -2178,7 +2178,7 @@ func (w *Wallet) GetTransactions(startBlock, endBlock *BlockIdentifier, cancel <
 				if err != nil {
 					return nil, err
 				}
-			//case *chain.NeutrinoClient:
+				//case *chain.NeutrinoClient:
 				//var err error
 				//start, err = client.GetBlockHeight(startBlock.hash)
 				//if err != nil {
@@ -2197,12 +2197,12 @@ func (w *Wallet) GetTransactions(startBlock, endBlock *BlockIdentifier, cancel <
 			switch client := chainClient.(type) {
 			case *chain.RPCClient:
 				endResp = client.GetBlockVerboseTxAsync(endBlock.hash)
-			//case *chain.NeutrinoClient:
-			//	var err error
-			//	end, err = client.GetBlockHeight(endBlock.hash)
-			//	if err != nil {
-			//		return nil, err
-			//	}
+				//case *chain.NeutrinoClient:
+				//	var err error
+				//	end, err = client.GetBlockHeight(endBlock.hash)
+				//	if err != nil {
+				//		return nil, err
+				//	}
 			}
 		}
 	}
