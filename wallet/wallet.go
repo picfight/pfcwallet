@@ -176,8 +176,8 @@ func (w *Wallet) SynchronizeRPC(chainClient chain.Interface) {
 	// If the chain client is a NeutrinoClient instance, set a birthday so
 	// we don't download all the filters as we go.
 	switch cc := chainClient.(type) {
-	case *chain.NeutrinoClient:
-		cc.SetStartTime(w.Manager.Birthday())
+	//case *chain.NeutrinoClient:
+	//	cc.SetStartTime(w.Manager.Birthday())
 	case *chain.PicfightcoindClient:
 		cc.SetBirthday(w.Manager.Birthday())
 	}
