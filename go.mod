@@ -15,9 +15,9 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/jrick/bitset v1.0.0
 	github.com/jrick/logrotate v1.0.0
-	github.com/picfight/pfcd v0.0.0-20190907172210-9b78639c95e0
+	github.com/picfight/pfcd v0.0.0-20190911115519-ce8d5b7f07a1
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7
-	golang.org/x/net v0.0.0-20190909003024-a7b16738d86b
+	golang.org/x/net v0.0.0-20190912160710-24e19bdeb0f2
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	google.golang.org/grpc v1.23.1
 )
