@@ -1,11 +1,6 @@
 pfcwallet
 =========
 
-[![Build Status](https://travis-ci.org/picfight/pfcwallet.png?branch=master)](https://travis-ci.org/picfight/pfcwallet)
-[![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/picfight/pfcwallet)
-[![Go Report Card](https://goreportcard.com/badge/github.com/picfight/pfcwallet)](https://goreportcard.com/report/github.com/picfight/pfcwallet)
-
 pfcwallet is a daemon handling PicFight wallet functionality.  All interaction
 with the wallet is performed over RPC.
 
@@ -77,7 +72,7 @@ Wallet clients interact with the wallet using one of two RPC servers:
 
 Binary releases are provided for common operating systems and architectures:
 
-https://github.com/decred/decred-binaries/releases
+https://github.com/decred/picfight-binaries/releases
 
 ### Build from source (all platforms)
 
@@ -113,7 +108,7 @@ root directory.  Some notes:
 All tests and linters may be run in a docker container using the script
 `run_tests.sh`.  This script defaults to using the current supported version of
 go.  You can run it with the major version of go you would like to use as the
-only arguement to test a previous on a previous version of go (generally decred
+only arguement to test a previous on a previous version of go (generally picfight
 supports the current version of go and the previous one).
 
 ```
@@ -156,8 +151,8 @@ RPC username and password.
 
 PowerShell (Installed from source):
 ```
-PS> cp $env:GOPATH\src\github.com\decred\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Pfcd\pfcd.conf
-PS> cp $env:GOPATH\src\github.com\decred\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
+PS> cp $env:GOPATH\src\github.com\picfight\pfcd\sample-pfcd.conf $env:LOCALAPPDATA\Pfcd\pfcd.conf
+PS> cp $env:GOPATH\src\github.com\picfight\pfcwallet\sample-pfcwallet.conf $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 PS> $editor $env:LOCALAPPDATA\Pfcd\pfcd.conf
 PS> $editor $env:LOCALAPPDATA\Pfcwallet\pfcwallet.conf
 ```
