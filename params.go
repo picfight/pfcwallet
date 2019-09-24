@@ -12,8 +12,8 @@ import (
 
 var activeNet = &PfcNetParams
 
-// PfcNetParams contains parameters specific running dcrwallet and
-// dcrd on the main network (wire.MainNet).
+// PfcNetParams contains parameters specific running pfcwallet and
+// pfcd on the main network (wire.MainNet).
 var PfcNetParams = netparams.Params{
 	Params:            &picfightcoin.PicFightCoinNetParams,
 	JSONRPCClientPort: "9109",

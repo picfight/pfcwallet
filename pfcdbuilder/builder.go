@@ -32,8 +32,6 @@ func nameGenerator(data string) string {
 }
 
 func fileGenerator(data string) string {
-	//data = coinknife.Replace(data, "github.com/decred/dcrd", "github.com/picfight/dcrd")
-	//data = coinknife.Replace(data, "decred/dcrd", "picfight/dcrd")
 	return data
 }
 
@@ -139,7 +137,7 @@ func processableFiles(file string) bool {
 	if strings.HasSuffix(file, ".log") {
 		return true
 	}
-	if strings.HasSuffix(file, "dcrd.service") {
+	if strings.HasSuffix(file, "pfcd.service") {
 		return true
 	}
 	if strings.HasSuffix(file, ".conf") {
