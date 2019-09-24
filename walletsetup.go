@@ -14,15 +14,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/hdkeychain"
-	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/internal/prompt"
-	"github.com/picfight/pfcwallet/loader"
-	"github.com/picfight/pfcwallet/wallet"
-	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
-	"github.com/picfight/pfcwallet/walletseed"
+	"github.com/decred/dcrd/chaincfg"
+	"github.com/decred/dcrd/hdkeychain"
+	"github.com/decred/dcrd/wire"
+	"github.com/decred/dcrwallet/errors"
+	"github.com/decred/dcrwallet/internal/prompt"
+	"github.com/decred/dcrwallet/loader"
+	"github.com/decred/dcrwallet/wallet"
+	_ "github.com/decred/dcrwallet/wallet/drivers/bdb"
+	"github.com/decred/dcrwallet/walletseed"
 )
 
 // networkDir returns the directory name of a network directory to hold wallet

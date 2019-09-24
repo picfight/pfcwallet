@@ -10,20 +10,20 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/decred/dcrd/connmgr"
+	dcrrpcclient "github.com/decred/dcrd/rpcclient"
+	"github.com/decred/dcrwallet/chain"
+	"github.com/decred/dcrwallet/loader"
+	"github.com/decred/dcrwallet/p2p"
+	"github.com/decred/dcrwallet/rpc/legacyrpc"
+	"github.com/decred/dcrwallet/rpc/rpcserver"
+	"github.com/decred/dcrwallet/spv"
+	"github.com/decred/dcrwallet/ticketbuyer"
+	ticketbuyerv2 "github.com/decred/dcrwallet/ticketbuyer/v2"
+	"github.com/decred/dcrwallet/wallet"
+	"github.com/decred/dcrwallet/wallet/udb"
 	"github.com/decred/slog"
 	"github.com/jrick/logrotate/rotator"
-	"github.com/picfight/pfcd/connmgr"
-	pfcrpcclient "github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcwallet/chain"
-	"github.com/picfight/pfcwallet/loader"
-	"github.com/picfight/pfcwallet/p2p"
-	"github.com/picfight/pfcwallet/rpc/legacyrpc"
-	"github.com/picfight/pfcwallet/rpc/rpcserver"
-	"github.com/picfight/pfcwallet/spv"
-	"github.com/picfight/pfcwallet/ticketbuyer"
-	ticketbuyerv2 "github.com/picfight/pfcwallet/ticketbuyer/v2"
-	"github.com/picfight/pfcwallet/wallet"
-	"github.com/picfight/pfcwallet/wallet/udb"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -54,7 +54,7 @@ var (
 	// application shutdown.
 	logRotator *rotator.Rotator
 
-	log          = backendLog.Logger("PFCW")
+	log          = backendLog.Logger("DCRW")
 	loaderLog    = backendLog.Logger("LODR")
 	walletLog    = backendLog.Logger("WLLT")
 	tkbyLog      = backendLog.Logger("TKBY")
@@ -72,7 +72,7 @@ func init() {
 	ticketbuyer.UseLogger(tkbyLog)
 	ticketbuyerv2.UseLogger(tkbyLog)
 	chain.UseLogger(syncLog)
-	pfcrpcclient.UseLogger(syncLog)
+	dcrrpcclient.UseLogger(syncLog)
 	spv.UseLogger(syncLog)
 	p2p.UseLogger(syncLog)
 	rpcserver.UseLogger(grpcLog)
@@ -82,7 +82,7 @@ func init() {
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
 var subsystemLoggers = map[string]slog.Logger{
-	"PFCW": log,
+	"DCRW": log,
 	"LODR": loaderLog,
 	"WLLT": walletLog,
 	"TKBY": tkbyLog,

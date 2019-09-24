@@ -1,5 +1,7 @@
-pfcwallet
+dcrwallet
 vendor
 *~
 .vscode
+
+.idea/
 \.idea/

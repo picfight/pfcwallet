@@ -5,6 +5,6 @@
 
 package main
 
-import "github.com/picfight/pfcwallet/netparams"
+import "github.com/decred/dcrwallet/netparams"
 
 var activeNet = &netparams.MainNetParams

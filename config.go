@@ -16,24 +16,24 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrwallet/errors"
+	"github.com/decred/dcrwallet/internal/cfgutil"
+	"github.com/decred/dcrwallet/netparams"
+	"github.com/decred/dcrwallet/ticketbuyer"
+	"github.com/decred/dcrwallet/version"
+	"github.com/decred/dcrwallet/wallet"
+	"github.com/decred/dcrwallet/wallet/txrules"
 	"github.com/decred/slog"
 	flags "github.com/jessevdk/go-flags"
-	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/internal/cfgutil"
-	"github.com/picfight/pfcwallet/netparams"
-	"github.com/picfight/pfcwallet/ticketbuyer"
-	"github.com/picfight/pfcwallet/version"
-	"github.com/picfight/pfcwallet/wallet"
-	"github.com/picfight/pfcwallet/wallet/txrules"
 )
 
 const (
-	defaultCAFilename          = "pfcd.cert"
-	defaultConfigFilename      = "pfcwallet.conf"
+	defaultCAFilename          = "dcrd.cert"
+	defaultConfigFilename      = "dcrwallet.conf"
 	defaultLogLevel            = "info"
 	defaultLogDirname          = "logs"
-	defaultLogFilename         = "pfcwallet.log"
+	defaultLogFilename         = "dcrwallet.log"
 	defaultRPCMaxClients       = 10
 	defaultRPCMaxWebsockets    = 25
 	defaultEnableTicketBuyer   = false
@@ -52,8 +52,8 @@ const (
 	defaultAccountGapLimit     = wallet.DefaultAccountGapLimit
 
 	// ticket buyer options
-	defaultMaxFee                    pfcutil.Amount = 1e6
-	defaultMinFee                    pfcutil.Amount = 1e5
+	defaultMaxFee                    dcrutil.Amount = 1e6
+	defaultMinFee                    dcrutil.Amount = 1e5
 	defaultMaxPriceScale                            = 0.0
 	defaultAvgVWAPPriceDelta                        = 2880
 	defaultMaxPerBlock                              = 1
@@ -73,8 +73,8 @@ const (
 )
 
 var (
-	pfcdDefaultCAFile  = filepath.Join(pfcutil.AppDataDir("pfcd", false), "rpc.cert")
-	defaultAppDataDir  = pfcutil.AppDataDir("pfcwallet", false)
+	dcrdDefaultCAFile  = filepath.Join(dcrutil.AppDataDir("dcrd", false), "rpc.cert")
+	defaultAppDataDir  = dcrutil.AppDataDir("dcrwallet", false)
 	defaultConfigFile  = filepath.Join(defaultAppDataDir, defaultConfigFilename)
 	defaultRPCKeyFile  = filepath.Join(defaultAppDataDir, "rpc.key")
 	defaultRPCCertFile = filepath.Join(defaultAppDataDir, "rpc.cert")
@@ -118,11 +118,11 @@ type config struct {
 	legacyTicketBuyer   bool
 
 	// RPC client options
-	RPCConnect       string                  `short:"c" long:"rpcconnect" description:"Hostname/IP and port of pfcd RPC server to connect to"`
-	CAFile           *cfgutil.ExplicitString `long:"cafile" description:"File containing root certificates to authenticate a TLS connections with pfcd"`
+	RPCConnect       string                  `short:"c" long:"rpcconnect" description:"Hostname/IP and port of dcrd RPC server to connect to"`
+	CAFile           *cfgutil.ExplicitString `long:"cafile" description:"File containing root certificates to authenticate a TLS connections with dcrd"`
 	DisableClientTLS bool                    `long:"noclienttls" description:"Disable TLS for the RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost"`
-	PfcdUsername     string                  `long:"pfcdusername" description:"Username for pfcd authentication"`
-	PfcdPassword     string                  `long:"pfcdpassword" default-mask:"-" description:"Password for pfcd authentication"`
+	DcrdUsername     string                  `long:"dcrdusername" description:"Username for dcrd authentication"`
+	DcrdPassword     string                  `long:"dcrdpassword" default-mask:"-" description:"Password for dcrd authentication"`
 	Proxy            string                  `long:"proxy" description:"Connect via SOCKS5 proxy (eg. 127.0.0.1:9050)"`
 	ProxyUser        string                  `long:"proxyuser" description:"Username for proxy server"`
 	ProxyPass        string                  `long:"proxypass" default-mask:"-" description:"Password for proxy server"`
@@ -150,8 +150,8 @@ type config struct {
 	NoLegacyRPC            bool                    `long:"nolegacyrpc" description:"Disable the legacy JSON-RPC server"`
 	LegacyRPCMaxClients    int64                   `long:"rpcmaxclients" description:"Max number of legacy JSON-RPC clients for standard connections"`
 	LegacyRPCMaxWebsockets int64                   `long:"rpcmaxwebsockets" description:"Max number of legacy JSON-RPC websocket connections"`
-	Username               string                  `short:"u" long:"username" description:"Username for legacy JSON-RPC and pfcd authentication (if pfcdusername is unset)"`
-	Password               string                  `short:"P" long:"password" default-mask:"-" description:"Password for legacy JSON-RPC and pfcd authentication (if pfcdpassword is unset)"`
+	Username               string                  `short:"u" long:"username" description:"Username for legacy JSON-RPC and dcrd authentication (if dcrdusername is unset)"`
+	Password               string                  `short:"P" long:"password" default-mask:"-" description:"Password for legacy JSON-RPC and dcrd authentication (if dcrdpassword is unset)"`
 
 	// IPC options
 	PipeTx            *uint `long:"pipetx" description:"File descriptor or handle of write end pipe to enable child -> parent process communication"`
@@ -329,7 +329,7 @@ func parseAndSetDebugLevels(debugLevel string) error {
 //      3) Load configuration file overwriting defaults with any specified options
 //      4) Parse CLI options and overwrite/add any specified options
 //
-// The above results in pfcwallet functioning properly without any config
+// The above results in dcrwallet functioning properly without any config
 // settings while still allowing the user to override settings with config files
 // and command line options.  Command line options always take precedence.
 // The bool returned indicates whether or not the wallet was recreated from a
@@ -816,12 +816,12 @@ func loadConfig(ctx context.Context) (*config, []string, error) {
 			return loadConfigError(err)
 		}
 	} else {
-		// If CAFile is unset, choose either the copy or local pfcd cert.
+		// If CAFile is unset, choose either the copy or local dcrd cert.
 		if !cfg.CAFile.ExplicitlySet() {
 			cfg.CAFile.Value = filepath.Join(cfg.AppDataDir.Value, defaultCAFilename)
 
 			// If the CA copy does not exist, check if we're connecting to
-			// a local pfcd and switch to its RPC cert if it exists.
+			// a local dcrd and switch to its RPC cert if it exists.
 			certExists, err := cfgutil.FileExists(cfg.CAFile.Value)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -829,14 +829,14 @@ func loadConfig(ctx context.Context) (*config, []string, error) {
 			}
 			if !certExists {
 				if _, ok := localhostListeners[RPCHost]; ok {
-					pfcdCertExists, err := cfgutil.FileExists(
-						pfcdDefaultCAFile)
+					dcrdCertExists, err := cfgutil.FileExists(
+						dcrdDefaultCAFile)
 					if err != nil {
 						fmt.Fprintln(os.Stderr, err)
 						return loadConfigError(err)
 					}
-					if pfcdCertExists {
-						cfg.CAFile.Value = pfcdDefaultCAFile
+					if dcrdCertExists {
+						cfg.CAFile.Value = dcrdDefaultCAFile
 					}
 				}
 			}
@@ -953,15 +953,15 @@ func loadConfig(ctx context.Context) (*config, []string, error) {
 	cfg.RPCCert.Value = cleanAndExpandPath(cfg.RPCCert.Value)
 	cfg.RPCKey.Value = cleanAndExpandPath(cfg.RPCKey.Value)
 
-	// If the pfcd username or password are unset, use the same auth as for
-	// the client.  The two settings were previously shared for pfcd and
+	// If the dcrd username or password are unset, use the same auth as for
+	// the client.  The two settings were previously shared for dcrd and
 	// client auth, so this avoids breaking backwards compatibility while
-	// allowing users to use different auth settings for pfcd and wallet.
-	if cfg.PfcdUsername == "" {
-		cfg.PfcdUsername = cfg.Username
+	// allowing users to use different auth settings for dcrd and wallet.
+	if cfg.DcrdUsername == "" {
+		cfg.DcrdUsername = cfg.Username
 	}
-	if cfg.PfcdPassword == "" {
-		cfg.PfcdPassword = cfg.Password
+	if cfg.DcrdPassword == "" {
+		cfg.DcrdPassword = cfg.Password
 	}
 
 	// Warn if user still has an old ticket buyer configuration file.
