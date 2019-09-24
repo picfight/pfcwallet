@@ -45,6 +45,7 @@ func ignoredFiles() map[string]bool {
 	ignore["builder"] = true
 	ignore["pfcdbuilder"] = true
 	ignore["picfightcoin"] = true
+	ignore["internal"] = true
 	return ignore
 }
 
