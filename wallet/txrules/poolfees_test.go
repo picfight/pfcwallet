@@ -9,7 +9,7 @@ import (
 )
 
 func TestStakePoolTicketFee(t *testing.T) {
-	params := &chaincfg.MainNetParams
+	params := &chaincfg.PicFightCoinNetParams
 	tests := []struct {
 		StakeDiff dcrutil.Amount
 		Fee       dcrutil.Amount

@@ -135,7 +135,7 @@ func main() {
 	case "testnet":
 		params = &chaincfg.TestNet3Params
 	case "mainnet":
-		params = &chaincfg.MainNetParams
+		params = &chaincfg.PicFightCoinNetParams
 	case "simnet":
 		params = &chaincfg.SimNetParams
 	default:

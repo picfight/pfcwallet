@@ -13,7 +13,7 @@ import (
 
 func TestCoinbaseMatured(t *testing.T) {
 	t.Parallel()
-	params := &chaincfg.MainNetParams
+	params := &chaincfg.PicFightCoinNetParams
 	maturity := int32(params.CoinbaseMaturity)
 	tests := []struct {
 		txHeight, tipHeight int32
@@ -40,7 +40,7 @@ func TestCoinbaseMatured(t *testing.T) {
 
 func TestTicketMatured(t *testing.T) {
 	t.Parallel()
-	params := &chaincfg.MainNetParams
+	params := &chaincfg.PicFightCoinNetParams
 	maturity := int32(params.TicketMaturity)
 	tests := []struct {
 		txHeight, tipHeight int32
@@ -67,7 +67,7 @@ func TestTicketMatured(t *testing.T) {
 
 func TestTicketExpired(t *testing.T) {
 	t.Parallel()
-	params := &chaincfg.MainNetParams
+	params := &chaincfg.PicFightCoinNetParams
 	expiry := int32(params.TicketMaturity) + int32(params.TicketExpiry)
 	tests := []struct {
 		txHeight, tipHeight int32

@@ -21,7 +21,7 @@ func TestCoinTypes(t *testing.T) {
 		params                           *chaincfg.Params
 		legacyCoinType, slip0044CoinType uint32
 	}{
-		{&chaincfg.MainNetParams, 20, 42},
+		{&chaincfg.PicFightCoinNetParams, 20, 42},
 		{&chaincfg.TestNet3Params, 11, 1},
 		{&chaincfg.SimNetParams, 115, 1},
 	}

@@ -121,7 +121,7 @@ func init() {
 	if opts.TestNet && opts.SimNet {
 		fatalf("Multiple decred networks may not be used simultaneously")
 	}
-	var activeNet = &chaincfg.MainNetParams
+	var activeNet = &chaincfg.PicFightCoinNetParams
 	if opts.TestNet {
 		activeNet = &chaincfg.TestNet3Params
 	} else if opts.SimNet {

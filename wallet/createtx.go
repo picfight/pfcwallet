@@ -51,7 +51,7 @@ const (
 var (
 	// maxTxSize is the maximum size of a transaction we can
 	// build with the wallet.
-	maxTxSize = chaincfg.MainNetParams.MaxTxSize
+	maxTxSize = chaincfg.PicFightCoinNetParams.MaxTxSize
 )
 
 // extendedOutPoint is a UTXO with an amount.

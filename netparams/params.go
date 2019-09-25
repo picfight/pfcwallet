@@ -16,10 +16,17 @@ type Params struct {
 	GRPCServerPort    string
 }
 
+var PicFightCoinNetParams = Params{
+	Params:            &chaincfg.PicFightCoinNetParams,
+	JSONRPCClientPort: "9109",
+	JSONRPCServerPort: "9110",
+	GRPCServerPort:    "9111",
+}
+
 // MainNetParams contains parameters specific running dcrwallet and
 // dcrd on the main network (wire.MainNet).
-var MainNetParams = Params{
-	Params:            &chaincfg.MainNetParams,
+var DecredNetParams = Params{
+	Params:            &chaincfg.DecredNetParams,
 	JSONRPCClientPort: "9109",
 	JSONRPCServerPort: "9110",
 	GRPCServerPort:    "9111",

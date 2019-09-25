@@ -220,7 +220,7 @@ func lastUsedAddressIndexUpgrade(tx walletdb.ReadWriteTx, publicPassphrase []byt
 			// mistake to hardcode the mainnet parameters here, it doesn't make
 			// any difference since only the pubkey hash is used.  (Why is there
 			// no exported method to just return the serialized public key?)
-			addr, _ := xpubChild.Address(&chaincfg.MainNetParams)
+			addr, _ := xpubChild.Address(&chaincfg.PicFightCoinNetParams)
 			if addressBucket.Get(addressKey(addr.Hash160()[:])) == nil {
 				// No more recorded addresses for this account.
 				break
@@ -238,7 +238,7 @@ func lastUsedAddressIndexUpgrade(tx walletdb.ReadWriteTx, publicPassphrase []byt
 			if err != nil {
 				return err
 			}
-			addr, _ := xpubChild.Address(&chaincfg.MainNetParams)
+			addr, _ := xpubChild.Address(&chaincfg.PicFightCoinNetParams)
 			if addressBucket.Get(addressKey(addr.Hash160()[:])) == nil {
 				break
 			}
