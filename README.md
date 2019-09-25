@@ -82,10 +82,16 @@ root directory.  Some notes:
 * Set the `GO111MODULE=on` environment variable if using Go 1.11 and building
   from within `GOPATH`.
 
-* Replace `go` with `vgo` when using Go 1.10.
-
 * The `pfcwallet` executable will be installed to `$GOPATH/bin`.  `GOPATH`
   defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
+
+## Build and install from sources:
+```bash
+set GO111MODULE=on
+  go version
+  go build -v ./...
+  go install . ./cmd/...
+```
 
 ## Testing
 
@@ -123,20 +129,9 @@ If everything appears to be working, it is recommended at this point to
 copy the sample pfcd and pfcwallet configurations and update with your
 RPC username and password.
 
-Build and install from sources:
-```bash
-GO111MODULE=on
-
-  go version
-  go clean -testcache
-  go build -v ./...
-  go test -v ./...
-  go install . ./cmd/...
-```
-
 ## Issue Tracker
 
-The [integrated github issue tracker](https://github.com/decred/pfcwallet/issues)
+The [integrated github issue tracker](https://github.com/picfight/pfcwallet/issues)
 is used for this project.
 
 ## License
