@@ -6,7 +6,7 @@
 package main
 
 import (
-	"github.com/decred/dcrwallet/netparams"
+	"github.com/picfight/pfcwallet/netparams"
 	"github.com/picfight/pfcd/picfightcoin"
 )
 

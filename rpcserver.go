@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decred/dcrd/certgen"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/loader"
-	"github.com/decred/dcrwallet/rpc/legacyrpc"
-	"github.com/decred/dcrwallet/rpc/rpcserver"
+	"github.com/picfight/pfcd/certgen"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/loader"
+	"github.com/picfight/pfcwallet/rpc/legacyrpc"
+	"github.com/picfight/pfcwallet/rpc/rpcserver"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
