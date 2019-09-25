@@ -13,8 +13,8 @@ import (
 	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"golang.org/x/crypto/ripemd160"
 )
 

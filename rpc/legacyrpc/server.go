@@ -19,12 +19,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/loader"
 	"github.com/picfight/pfcwallet/ticketbuyer"
-	"github.com/gorilla/websocket"
 )
 
 type websocketClient struct {

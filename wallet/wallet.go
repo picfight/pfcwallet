@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jrick/bitset"
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
@@ -32,11 +33,10 @@ import (
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/deployments"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/jrick/bitset"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"golang.org/x/sync/errgroup"
 )
 

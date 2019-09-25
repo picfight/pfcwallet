@@ -19,9 +19,9 @@ import (
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"github.com/picfight/pfcwallet/wallet/txrules"
 	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 func (w *Wallet) extendMainChain(op errors.Op, dbtx walletdb.ReadWriteTx, header *wire.BlockHeader, f *gcs.Filter, transactions []*wire.MsgTx) ([]wire.OutPoint, error) {

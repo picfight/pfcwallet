@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	_ "github.com/picfight/pfcwallet/wallet/internal/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // This example demonstrates creating a new database.

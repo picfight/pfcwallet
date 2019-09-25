@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jessevdk/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/dcrjson"
@@ -21,7 +22,6 @@ import (
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/wallet/txauthor"
 	"github.com/picfight/pfcwallet/wallet/txrules"
-	"github.com/jessevdk/go-flags"
 	"golang.org/x/crypto/ssh/terminal"
 )
 

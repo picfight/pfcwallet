@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/picfight/pfcwallet/errors"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	_ "github.com/picfight/pfcwallet/wallet/internal/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // TestAddDuplicateDriver ensures that adding a duplicate driver does not

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/jrick/bitset"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/dcrutil"
@@ -21,9 +22,8 @@ import (
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcwallet/errors"
 	"github.com/picfight/pfcwallet/validate"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"github.com/picfight/pfcwallet/wallet/udb"
-	"github.com/jrick/bitset"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"golang.org/x/sync/errgroup"
 )
 

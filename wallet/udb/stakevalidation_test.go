@@ -12,8 +12,8 @@ import (
 	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/gcs"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcwallet/wallet/walletdb"
 	_ "github.com/picfight/pfcwallet/wallet/internal/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 func insertMainChainHeaders(s *Store, ns walletdb.ReadWriteBucket, addrmgrNs walletdb.ReadBucket,
