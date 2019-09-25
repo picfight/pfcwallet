@@ -65,7 +65,6 @@ root directory.  Some notes:
 * The `pfcwallet` executable will be installed to `$GOPATH/bin`.  `GOPATH`
   defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
 
-## Build and install from sources:
 ```bash
 set GO111MODULE=on
   go version
@@ -77,7 +76,7 @@ set GO111MODULE=on
 
 To run the tests locally:
 
-```
+```bash
 ./run_tests.sh 
 ```
 
@@ -89,19 +88,19 @@ Windows, or any terminal emulator on *nix.
 
 - Run the following command to start pfcd:
 
-```
+```bash
 pfcd -u rpcuser -P rpcpass
 ```
 
 - Run the following command to create a wallet:
 
-```
+```bash
 pfcwallet -u rpcuser -P rpcpass --create
 ```
 
 - Run the following command to start pfcwallet:
 
-```
+```bash
 pfcwallet -u rpcuser -P rpcpass
 ```
 
@@ -109,17 +108,60 @@ If everything appears to be working, it is recommended at this point to
 copy the sample pfcd and pfcwallet configurations and update with your
 RPC username and password.
 
+## Example run commands
 
-
-Build and install from sources:
+Launch mining node:
 ```bash
-GO111MODULE=on
+pfcd
+     --generate
+     --miningaddr "JsCVh5SVDQovpW1dswaZNan2mfNWy6uRpPx"
+     --listen=127.0.0.1:30000
+     --rpclisten=127.0.0.1:30001
+     --datadir=nodeA
+     --rpccert=nodeA\rpc.cert
+     --rpckey=nodeA\rpc.key     
+     --txindex
+     --addrindex
+     --rpcuser=node.user
+     --rpcpass=node.pass
+```
 
-  go version
-  go clean -testcache
-  go build -v ./...
-  go test -v ./...
-  go install . ./cmd/...
+Copy `nodeA\rpc.cert` to `wallet\pfcd-rpc.cert` 
+
+Launch wallet, add `--create` flag for the first run:
+```bash
+pfcwallet
+       --rpclisten=127.0.0.1:20002
+       --rpcconnect=127.0.0.1:30001
+       --appdata=wallet
+       --cafile=wallet\pfcd-rpc.cert
+       --rpckey=wallet\rpc.key
+       --rpccert=wallet\rpc.cert
+       --pfcdusername=node.user
+       --pfcdpassword=node.pass
+       --username=wallet.user
+       --password=wallet.pass 
+```
+```bash
+       --create 
+```
+
+Check balance:
+```bash
+pfcctl /u wallet.user
+       /P wallet.pass
+       /s 127.0.0.1:20002
+       /c wallet\rpc.cert
+       --wallet getbalance
+```
+
+Generate wallet address:
+```bash
+pfcctl /u wallet.user
+       /P wallet.pass
+       /s 127.0.0.1:20002
+       /c wallet\rpc.cert
+       --wallet getnewaddress
 ```
 
 ## Issue Tracker
