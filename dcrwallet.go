@@ -309,7 +309,7 @@ func run(ctx context.Context) error {
 
 	// When not running with --noinitialload, it is the main package's
 	// responsibility to synchronize the wallet with the network through SPV or
-	// the trusted dcrd server.  This blocks until cancelled.
+	// the trusted pfcd server.  This blocks until cancelled.
 	if !cfg.NoInitialLoad {
 		if done(ctx) {
 			return ctx.Err()
@@ -506,7 +506,7 @@ func readCAFile() []byte {
 	return certs
 }
 
-// startChainRPC opens a RPC client connection to a dcrd server for blockchain
+// startChainRPC opens a RPC client connection to a pfcd server for blockchain
 // services.  This function uses the RPC options from the global config and
 // there is no recovery in case the server is not available or if there is an
 // authentication error.  Instead, all requests to the client will simply error.

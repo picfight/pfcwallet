@@ -441,7 +441,7 @@ func (l *Loader) StartTicketPurchase(passphrase []byte, ticketbuyerCfg *ticketbu
 
 	c, err := chain.RPCClientFromBackend(l.backend)
 	if err != nil {
-		return errors.E(op, errors.Invalid, "dcrd RPC client must be loaded")
+		return errors.E(op, errors.Invalid, "pfcd RPC client must be loaded")
 	}
 
 	w := l.wallet

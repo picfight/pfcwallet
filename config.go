@@ -73,7 +73,7 @@ const (
 )
 
 var (
-	dcrdDefaultCAFile  = filepath.Join(dcrutil.AppDataDir("pfcd", false), "rpc.cert")
+	pfcdDefaultCAFile  = filepath.Join(dcrutil.AppDataDir("pfcd", false), "rpc.cert")
 	defaultAppDataDir  = dcrutil.AppDataDir("pfcwallet", false)
 	defaultConfigFile  = filepath.Join(defaultAppDataDir, defaultConfigFilename)
 	defaultRPCKeyFile  = filepath.Join(defaultAppDataDir, "rpc.key")
@@ -829,14 +829,14 @@ func loadConfig(ctx context.Context) (*config, []string, error) {
 			}
 			if !certExists {
 				if _, ok := localhostListeners[RPCHost]; ok {
-					dcrdCertExists, err := cfgutil.FileExists(
-						dcrdDefaultCAFile)
+					pfcdCertExists, err := cfgutil.FileExists(
+						pfcdDefaultCAFile)
 					if err != nil {
 						fmt.Fprintln(os.Stderr, err)
 						return loadConfigError(err)
 					}
-					if dcrdCertExists {
-						cfg.CAFile.Value = dcrdDefaultCAFile
+					if pfcdCertExists {
+						cfg.CAFile.Value = pfcdDefaultCAFile
 					}
 				}
 			}

@@ -168,7 +168,7 @@ type walletServer struct {
 }
 
 // loaderServer provides RPC clients with the ability to load and close wallets,
-// as well as establishing a RPC connection to a dcrd consensus server.
+// as well as establishing a RPC connection to a pfcd consensus server.
 type loaderServer struct {
 	ready     uint32 // atomic
 	loader    *loader.Loader

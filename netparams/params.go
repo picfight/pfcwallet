@@ -23,8 +23,8 @@ var PicFightCoinNetParams = Params{
 	GRPCServerPort:    "9111",
 }
 
-// MainNetParams contains parameters specific running dcrwallet and
-// dcrd on the main network (wire.MainNet).
+// MainNetParams contains parameters specific running pfcwallet and
+// pfcd on the main network (wire.MainNet).
 var DecredNetParams = Params{
 	Params:            &chaincfg.DecredNetParams,
 	JSONRPCClientPort: "9109",
@@ -32,8 +32,8 @@ var DecredNetParams = Params{
 	GRPCServerPort:    "9111",
 }
 
-// TestNet3Params contains parameters specific running dcrwallet and
-// dcrd on the test network (version 3) (wire.TestNet3).
+// TestNet3Params contains parameters specific running pfcwallet and
+// pfcd on the test network (version 3) (wire.TestNet3).
 var TestNet3Params = Params{
 	Params:            &chaincfg.TestNet3Params,
 	JSONRPCClientPort: "19109",

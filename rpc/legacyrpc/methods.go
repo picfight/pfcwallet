@@ -148,7 +148,7 @@ var handlers = map[string]handler{
 	"importwallet":         {fn: unimplemented, noHelp: true},
 	"listaddressgroupings": {fn: unimplemented, noHelp: true},
 
-	// Reference methods which can't be implemented by dcrwallet due to
+	// Reference methods which can't be implemented by pfcwallet due to
 	// design decision differences
 	"dumpwallet":    {fn: unsupported, noHelp: true},
 	"encryptwallet": {fn: unsupported, noHelp: true},
@@ -166,11 +166,11 @@ func unimplemented(*Server, interface{}) (interface{}, error) {
 }
 
 // unsupported handles a standard bitcoind RPC request which is
-// unsupported by dcrwallet due to design differences.
+// unsupported by pfcwallet due to design differences.
 func unsupported(*Server, interface{}) (interface{}, error) {
 	return nil, &dcrjson.RPCError{
 		Code:    -1,
-		Message: "Request unsupported by dcrwallet",
+		Message: "Request unsupported by pfcwallet",
 	}
 }
 
@@ -194,7 +194,7 @@ func lazyApplyHandler(s *Server, request *dcrjson.Request) lazyHandler {
 			}
 			chainClient, err := chain.RPCClientFromBackend(n)
 			if err != nil {
-				return nil, rpcErrorf(dcrjson.ErrRPCClientNotConnected, "RPC passthrough requires dcrd RPC synchronization")
+				return nil, rpcErrorf(dcrjson.ErrRPCClientNotConnected, "RPC passthrough requires pfcd RPC synchronization")
 			}
 			resp, err := chainClient.RawRequest(request.Method, request.Params)
 			if err != nil {
@@ -893,7 +893,7 @@ func getAccount(s *Server, icmd interface{}) (interface{}, error) {
 
 // getAccountAddress handles a getaccountaddress by returning the most
 // recently-created chained address that has not yet been used (does not yet
-// appear in the blockchain, or any tx that has arrived in the dcrd mempool).
+// appear in the blockchain, or any tx that has arrived in the pfcd mempool).
 // If the most recently-requested address has been used, a new address (the
 // next chained address in the keypool) is used.  This can fail if the keypool
 // runs out (and will return dcrjson.ErrRPCWalletKeypoolRanOut if that happens).
@@ -1066,7 +1066,7 @@ func importScript(s *Server, icmd interface{}) (interface{}, error) {
 	return nil, nil
 }
 
-// keypoolRefill handles the keypoolrefill command.  dcrwallet generates
+// keypoolRefill handles the keypoolrefill command.  pfcwallet generates
 // deterministic addresses rather than using a keypool, so this method does
 // nothing.
 func keypoolRefill(s *Server, icmd interface{}) (interface{}, error) {
@@ -1612,7 +1612,7 @@ var helpDescsMu sync.Mutex // Help may execute concurrently, so synchronize acce
 func help(s *Server, icmd interface{}) (interface{}, error) {
 	cmd := icmd.(*dcrjson.HelpCmd)
 	// TODO: The "help" RPC should use a HTTP POST client when calling down to
-	// dcrd for additional help methods.  This avoids including websocket-only
+	// pfcd for additional help methods.  This avoids including websocket-only
 	// requests in the help, which are not callable by wallet JSON-RPC clients.
 	var chainClient *rpcclient.Client
 	n, _ := s.walletLoader.NetworkBackend()
@@ -2823,7 +2823,7 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 		return nil, rpcErrorf(dcrjson.ErrRPCInvalidParameter, "invalid sighash flag")
 	}
 
-	// TODO: really we probably should look these up with dcrd anyway to
+	// TODO: really we probably should look these up with pfcd anyway to
 	// make sure that they match the blockchain if present.
 	inputs := make(map[wire.OutPoint][]byte)
 	scripts := make(map[string][]byte)
@@ -2874,7 +2874,7 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 	}
 
 	// Now we go and look for any inputs that we were not provided by
-	// querying dcrd with getrawtransaction. We queue up a bunch of async
+	// querying pfcd with getrawtransaction. We queue up a bunch of async
 	// requests and will wait for replies after we have checked the rest of
 	// the arguments.
 	var requested map[wire.OutPoint]rpcclient.FutureGetTxOutResult
@@ -2951,7 +2951,7 @@ func signRawTransaction(s *Server, icmd interface{}) (interface{}, error) {
 	for outPoint, resp := range requested {
 		result, err := resp.Receive()
 		if err != nil {
-			return nil, errors.E(errors.Op("dcrd.jsonrpc.gettxout"), err)
+			return nil, errors.E(errors.Op("pfcd.jsonrpc.gettxout"), err)
 		}
 		// gettxout returns JSON null if the output is found, but is spent by
 		// another transaction in the main chain.
@@ -3441,7 +3441,7 @@ func version(s *Server, icmd interface{}) (interface{}, error) {
 		resp = make(map[string]dcrjson.VersionResult)
 	}
 
-	resp["dcrwalletjsonrpcapi"] = dcrjson.VersionResult{
+	resp["pfcwalletjsonrpcapi"] = dcrjson.VersionResult{
 		VersionString: jsonrpcSemverString,
 		Major:         jsonrpcSemverMajor,
 		Minor:         jsonrpcSemverMinor,

@@ -920,7 +920,7 @@ func log2(x int) int {
 }
 
 // BlockLocators returns block locators, suitable for use in a getheaders wire
-// message or dcrd JSON-RPC request, for the blocks in sidechain and saved in
+// message or pfcd JSON-RPC request, for the blocks in sidechain and saved in
 // the wallet's main chain.  For memory and lookup efficiency, many older hashes
 // are skipped, with increasing gaps between included hashes.
 //
@@ -1526,7 +1526,7 @@ func (w *Wallet) CalculateAccountBalances(confirms int32) (map[uint32]*udb.Balan
 
 // CurrentAddress gets the most recently requested payment address from a wallet.
 // If the address has already been used (there is at least one transaction
-// spending to it in the blockchain or dcrd mempool), the next chained address
+// spending to it in the blockchain or pfcd mempool), the next chained address
 // is returned.
 func (w *Wallet) CurrentAddress(account uint32) (dcrutil.Address, error) {
 	const op errors.Op = "wallet.CurrentAddress"
@@ -3742,7 +3742,7 @@ func ticketChangeMatured(params *chaincfg.Params, txHeight, curHeight int32) boo
 // ticketMatured returns whether a ticket mined at txHeight has
 // reached ticket maturity in a chain with a tip height curHeight.
 func ticketMatured(params *chaincfg.Params, txHeight, curHeight int32) bool {
-	// dcrd has an off-by-one in the calculation of the ticket
+	// pfcd has an off-by-one in the calculation of the ticket
 	// maturity, which results in maturity being one block higher
 	// than the params would indicate.
 	return txHeight >= 0 && curHeight-txHeight > int32(params.TicketMaturity)

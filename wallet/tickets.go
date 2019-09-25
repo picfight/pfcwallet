@@ -113,9 +113,9 @@ func (w *Wallet) LiveTicketHashes(chainClient *dcrrpcclient.Client, includeImmat
 	}
 
 	// Determine if the extra tickets are immature or possibly live.  Because
-	// these transactions are not part of the wallet's transaction history, dcrd
+	// these transactions are not part of the wallet's transaction history, pfcd
 	// must be queried for their blockchain height.  This functionality requires
-	// the dcrd transaction index to be enabled.
+	// the pfcd transaction index to be enabled.
 	var g errgroup.Group
 	type extraTicketResult struct {
 		valid  bool // unspent with known height
