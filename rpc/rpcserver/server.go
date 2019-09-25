@@ -9,11 +9,11 @@
 // Full documentation of the API implemented by this package is maintained in a
 // language-agnostic document:
 //
-//   https://github.com/decred/dcrwallet/blob/master/rpc/documentation/api.md
+//   https://github.com/picfight/pfcwallet/blob/master/rpc/documentation/api.md
 //
 // Any API changes must be performed according to the steps listed here:
 //
-//   https://github.com/decred/dcrwallet/blob/master/rpc/documentation/serverchanges.md
+//   https://github.com/picfight/pfcwallet/blob/master/rpc/documentation/serverchanges.md
 package rpcserver
 
 import (
@@ -31,33 +31,33 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/decred/dcrd/addrmgr"
-	"github.com/decred/dcrd/blockchain/stake"
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrec"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/hdkeychain"
-	"github.com/decred/dcrd/rpcclient"
-	"github.com/decred/dcrd/txscript"
-	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrwallet/chain"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/internal/cfgutil"
-	h "github.com/decred/dcrwallet/internal/helpers"
-	"github.com/decred/dcrwallet/internal/zero"
-	"github.com/decred/dcrwallet/loader"
-	"github.com/decred/dcrwallet/netparams"
-	"github.com/decred/dcrwallet/p2p"
-	pb "github.com/decred/dcrwallet/rpc/walletrpc"
-	"github.com/decred/dcrwallet/spv"
-	"github.com/decred/dcrwallet/ticketbuyer"
-	tbv2 "github.com/decred/dcrwallet/ticketbuyer/v2"
-	"github.com/decred/dcrwallet/wallet"
-	"github.com/decred/dcrwallet/wallet/txauthor"
-	"github.com/decred/dcrwallet/wallet/txrules"
-	"github.com/decred/dcrwallet/wallet/udb"
-	"github.com/decred/dcrwallet/walletseed"
+	"github.com/picfight/pfcd/addrmgr"
+	"github.com/picfight/pfcd/blockchain/stake"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/dcrec"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcd/hdkeychain"
+	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/txscript"
+	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcwallet/chain"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/internal/cfgutil"
+	h "github.com/picfight/pfcwallet/internal/helpers"
+	"github.com/picfight/pfcwallet/internal/zero"
+	"github.com/picfight/pfcwallet/loader"
+	"github.com/picfight/pfcwallet/netparams"
+	"github.com/picfight/pfcwallet/p2p"
+	pb "github.com/picfight/pfcwallet/rpc/walletrpc"
+	"github.com/picfight/pfcwallet/spv"
+	"github.com/picfight/pfcwallet/ticketbuyer"
+	tbv2 "github.com/picfight/pfcwallet/ticketbuyer/v2"
+	"github.com/picfight/pfcwallet/wallet"
+	"github.com/picfight/pfcwallet/wallet/txauthor"
+	"github.com/picfight/pfcwallet/wallet/txrules"
+	"github.com/picfight/pfcwallet/wallet/udb"
+	"github.com/picfight/pfcwallet/walletseed"
 )
 
 // Public API version constants

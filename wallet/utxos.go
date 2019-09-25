@@ -3,14 +3,14 @@ package wallet
 import (
 	"time"
 
-	"github.com/decred/dcrd/blockchain"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/txscript"
-	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/wallet/walletdb"
-	"github.com/decred/dcrwallet/wallet/txauthor"
-	"github.com/decred/dcrwallet/wallet/udb"
+	"github.com/picfight/pfcd/blockchain"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcd/txscript"
+	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/txauthor"
+	"github.com/picfight/pfcwallet/wallet/udb"
 )
 
 // OutputSelectionPolicy describes the rules for selecting an output from the

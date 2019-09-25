@@ -19,11 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/dcrjson"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/loader"
-	"github.com/decred/dcrwallet/ticketbuyer"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/loader"
+	"github.com/picfight/pfcwallet/ticketbuyer"
 	"github.com/gorilla/websocket"
 )
 

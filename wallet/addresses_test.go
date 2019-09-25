@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrwallet/wallet/walletdb"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // expectedAddr is used to house the expected return values from a managed

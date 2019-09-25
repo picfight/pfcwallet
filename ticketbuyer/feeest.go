@@ -7,8 +7,8 @@ package ticketbuyer
 import (
 	"sort"
 
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrwallet/errors"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcwallet/errors"
 )
 
 const (

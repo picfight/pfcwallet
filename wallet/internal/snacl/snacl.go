@@ -12,8 +12,8 @@ import (
 	"io"
 	"runtime/debug"
 
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/internal/zero"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/internal/zero"
 	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/scrypt"
 )

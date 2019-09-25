@@ -9,10 +9,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/dcrutil"
-	_ "github.com/decred/dcrwallet/wallet/drivers/bdb"
-	"github.com/decred/dcrwallet/wallet/walletdb"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/dcrutil"
+	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 var basicWalletConfig = Config{

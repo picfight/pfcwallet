@@ -19,8 +19,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/decred/dcrd/dcrjson"
-	"github.com/decred/dcrwallet/internal/rpchelp"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcwallet/internal/rpchelp"
 )
 
 func serverMethods() map[string]struct{} {

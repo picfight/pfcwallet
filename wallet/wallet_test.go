@@ -8,7 +8,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/decred/dcrd/chaincfg"
+	"github.com/picfight/pfcd/chaincfg"
 )
 
 func TestCoinbaseMatured(t *testing.T) {

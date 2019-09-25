@@ -1,6 +1,6 @@
-module github.com/decred/dcrwallet/internal/helpers
+module github.com/picfight/pfcwallet/internal/helpers
 
 require (
-	github.com/decred/dcrd/dcrutil v1.2.0
-	github.com/decred/dcrd/wire v1.2.0
+	github.com/picfight/pfcd/dcrutil v1.2.0
+	github.com/picfight/pfcd/wire v1.2.0
 )

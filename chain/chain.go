@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	dcrrpcclient "github.com/decred/dcrd/rpcclient"
-	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrwallet/errors"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/chaincfg/chainhash"
+	dcrrpcclient "github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcwallet/errors"
 )
 
 var requiredChainServerAPI = semver{major: 5, minor: 0, patch: 0}

@@ -8,10 +8,10 @@ package udb
 import (
 	"encoding/hex"
 
-	"github.com/decred/dcrd/chaincfg/chainec"
-	"github.com/decred/dcrd/dcrec"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/hdkeychain"
+	"github.com/picfight/pfcd/chaincfg/chainec"
+	"github.com/picfight/pfcd/dcrec"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcd/hdkeychain"
 )
 
 // ManagedAddress is an interface that provides acces to information regarding

@@ -1,15 +1,15 @@
-module github.com/decred/dcrwallet/p2p
+module github.com/picfight/pfcwallet/p2p
 
 require (
-	github.com/decred/dcrd/addrmgr v1.0.2
-	github.com/decred/dcrd/chaincfg v1.2.0
-	github.com/decred/dcrd/chaincfg/chainhash v1.0.1
-	github.com/decred/dcrd/connmgr v1.0.2
-	github.com/decred/dcrd/gcs v1.0.2
-	github.com/decred/dcrd/wire v1.2.0
-	github.com/decred/dcrwallet/errors v1.0.1
-	github.com/decred/dcrwallet/lru v1.0.0
-	github.com/decred/dcrwallet/version v1.0.1
+	github.com/picfight/pfcd/addrmgr v1.0.2
+	github.com/picfight/pfcd/chaincfg v1.2.0
+	github.com/picfight/pfcd/chaincfg/chainhash v1.0.1
+	github.com/picfight/pfcd/connmgr v1.0.2
+	github.com/picfight/pfcd/gcs v1.0.2
+	github.com/picfight/pfcd/wire v1.2.0
+	github.com/picfight/pfcwallet/errors v1.0.1
+	github.com/picfight/pfcwallet/lru v1.0.0
+	github.com/picfight/pfcwallet/version v1.0.1
 	github.com/decred/slog v1.0.0
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/golang/protobuf v1.2.0 // indirect

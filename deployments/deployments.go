@@ -5,8 +5,8 @@
 package deployments
 
 import (
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/wire"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/wire"
 )
 
 // HardcodedDeployment specifies hardcoded block heights that a deployment

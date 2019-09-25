@@ -20,8 +20,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/wallet/walletdb"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // subTestFailError is used to signal that a sub test returned false.

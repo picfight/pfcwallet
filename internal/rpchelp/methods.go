@@ -7,7 +7,7 @@
 
 package rpchelp
 
-import "github.com/decred/dcrd/dcrjson"
+import "github.com/picfight/pfcd/dcrjson"
 
 // Common return types.
 var (

@@ -9,16 +9,16 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/gcs"
-	"github.com/decred/dcrd/gcs/blockcf"
-	"github.com/decred/dcrd/txscript"
-	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/p2p"
-	"github.com/decred/dcrwallet/validate"
-	"github.com/decred/dcrwallet/wallet"
+	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcd/gcs"
+	"github.com/picfight/pfcd/gcs/blockcf"
+	"github.com/picfight/pfcd/txscript"
+	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/p2p"
+	"github.com/picfight/pfcwallet/validate"
+	"github.com/picfight/pfcwallet/wallet"
 )
 
 var _ wallet.NetworkBackend = (*Syncer)(nil)

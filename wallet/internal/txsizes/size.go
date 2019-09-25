@@ -6,8 +6,8 @@
 package txsizes
 
 import (
-	"github.com/decred/dcrd/wire"
-	h "github.com/decred/dcrwallet/internal/helpers"
+	"github.com/picfight/pfcd/wire"
+	h "github.com/picfight/pfcwallet/internal/helpers"
 )
 
 // Worst case script and input/output size estimates.

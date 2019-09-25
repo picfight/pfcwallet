@@ -5,10 +5,10 @@
 package wallet
 
 import (
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/wallet/walletdb"
-	"github.com/decred/dcrwallet/wallet/udb"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
+	"github.com/picfight/pfcwallet/wallet/udb"
 )
 
 // StakePoolUserInfo returns the stake pool user information for a user

@@ -1,8 +1,8 @@
-module github.com/decred/dcrwallet/validate
+module github.com/picfight/pfcwallet/validate
 
 require (
-	github.com/decred/dcrd/blockchain v1.1.1
-	github.com/decred/dcrd/gcs v1.0.2
-	github.com/decred/dcrd/wire v1.2.0
-	github.com/decred/dcrwallet/errors v1.0.1
+	github.com/picfight/pfcd/blockchain v1.1.1
+	github.com/picfight/pfcd/gcs v1.0.2
+	github.com/picfight/pfcd/wire v1.2.0
+	github.com/picfight/pfcwallet/errors v1.0.1
 )

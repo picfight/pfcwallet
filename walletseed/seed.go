@@ -10,9 +10,9 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/decred/dcrd/hdkeychain"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/pgpwordlist"
+	"github.com/picfight/pfcd/hdkeychain"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/pgpwordlist"
 )
 
 // GenerateRandomSeed returns a new seed created from a cryptographically-secure

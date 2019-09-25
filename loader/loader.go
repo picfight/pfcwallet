@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrwallet/chain"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/ticketbuyer"
-	"github.com/decred/dcrwallet/wallet"
-	_ "github.com/decred/dcrwallet/wallet/drivers/bdb" // driver loaded during init
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcwallet/chain"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/ticketbuyer"
+	"github.com/picfight/pfcwallet/wallet"
+	_ "github.com/picfight/pfcwallet/wallet/drivers/bdb" // driver loaded during init
 )
 
 const (

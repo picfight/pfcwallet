@@ -13,9 +13,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/decred/dcrd/wire"
+	"github.com/picfight/pfcd/wire"
 
-	rpc "github.com/decred/dcrd/rpcclient"
+	rpc "github.com/picfight/pfcd/rpcclient"
 )
 
 // walletTestConfig contains all the args, and data required to launch a dcrwallet process

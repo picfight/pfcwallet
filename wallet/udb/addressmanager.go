@@ -11,14 +11,14 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/hdkeychain"
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrwallet/internal/zero"
-	"github.com/decred/dcrwallet/wallet/internal/snacl"
-	"github.com/decred/dcrwallet/wallet/walletdb"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/chaincfg/chainec"
+	"github.com/picfight/pfcd/dcrutil"
+	"github.com/picfight/pfcd/hdkeychain"
+	"github.com/picfight/pfcwallet/errors"
+	"github.com/picfight/pfcwallet/internal/zero"
+	"github.com/picfight/pfcwallet/wallet/internal/snacl"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 	"golang.org/x/crypto/ripemd160"
 )
 

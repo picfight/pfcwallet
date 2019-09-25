@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrwallet/errors"
+	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcwallet/errors"
 
-	"github.com/decred/dcrd/dcrutil"
-	rpc "github.com/decred/dcrd/rpcclient"
+	"github.com/picfight/pfcd/dcrutil"
+	rpc "github.com/picfight/pfcd/rpcclient"
 )
 
 var (

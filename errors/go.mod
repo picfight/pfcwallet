@@ -1,1 +1,1 @@
-module github.com/decred/dcrwallet/errors
+module github.com/picfight/pfcwallet/errors

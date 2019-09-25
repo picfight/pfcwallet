@@ -5,10 +5,10 @@
 package udb
 
 import (
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/gcs"
-	"github.com/decred/dcrd/gcs/blockcf"
-	"github.com/decred/dcrwallet/wallet/walletdb"
+	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/gcs"
+	"github.com/picfight/pfcd/gcs/blockcf"
+	"github.com/picfight/pfcwallet/wallet/walletdb"
 )
 
 // CFilter returns the saved regular compact filter for a block.
