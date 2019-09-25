@@ -47,8 +47,8 @@ func nameGenerator(data string) string {
 }
 
 func fileGenerator(data string) string {
-	data = coinknife.Replace(data, "decred/dcrd", "picfight/pfcd")
-	data = coinknife.Replace(data, "decred/dcrwallet", "picfight/pfcwallet")
+	//data = coinknife.Replace(data, "decred/dcrd", "picfight/pfcd")
+	//data = coinknife.Replace(data, "decred/dcrwallet", "picfight/pfcwallet")
 	//data = coinknife.Replace(data, "github.com/decred/dcrd", "github.com/picfight/dcrd")
 	//data = coinknife.Replace(data, "decred/dcrd", "picfight/dcrd")
 	return data
@@ -60,6 +60,7 @@ func ignoredFiles() map[string]bool {
 	ignore[".git"] = true
 	ignore[".github"] = true
 	ignore[".idea"] = true
+	ignore["vendor"] = true
 	ignore["pfcwalletbuilder"] = true
 	return ignore
 }
