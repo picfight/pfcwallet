@@ -4,24 +4,6 @@ pfcwallet
 pfcwallet is a daemon handling PicFight coin wallet functionality.  All interaction
 with the wallet is performed over RPC.
 
-Public and private keys are derived using the hierarchical
-deterministic format described by
-[BIP0032](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki).
-Unencrypted private keys are not supported and are never written to
-disk.  pfcwallet uses the
-`m/44'/<coin type>'/<account>'/<branch>/<address index>`
-HD path for all derived addresses, as described by
-[BIP0044](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki).
-
-Due to the sensitive nature of public data in a BIP0032 wallet,
-pfcwallet provides the option of encrypting not just private keys, but
-public data as well.  This is intended to thwart privacy risks where a
-wallet file is compromised without exposing all current and future
-addresses (public keys) managed by the wallet. While access to this
-information would not allow an attacker to spend or steal coins, it
-does mean they could track all transactions involving your addresses
-and therefore know your exact balance.
-
 pfcwallet provides two modes of operation to connect to the PicFight coin
 network.  The first (and default) is to communicate with a single
 trusted `pfcd` instance using JSON-RPC.  The second is a
@@ -29,13 +11,11 @@ privacy-preserving Simplified Payment Verification (SPV) mode (enabled
 with the `--spv` flag) where the wallet connects either to specified
 peers (with `--spvconnect`) or peers discovered from seeders and other
 peers. Both modes can be switched between with just a restart of the
-wallet.  It is advised to avoid SPV mode for heavily-used wallets
+wallet. It is advised to avoid SPV mode for heavily-used wallets
 which require downloading most blocks regardless.
 
-Not all functionality is available when running in SPV mode.  Some of
-these features may become available in future versions, but only if a
-consensus vote passes to activate the required changes.  Currently,
-the following features are disabled or unavailable to SPV wallets:
+Not all functionality is available when running in SPV mode.
+Currently, the following features are disabled or unavailable to SPV wallets:
 
   * Voting
 
@@ -65,7 +45,7 @@ Wallet clients interact with the wallet using one of two RPC servers:
      need notifications for changes to the wallet, this is the RPC server to
      use. The gRPC server is documented [here](./rpc/documentation/README.md).
 
-## Installation and updating
+## Installation
 
 ### Build from source (all platforms)
 
@@ -128,6 +108,19 @@ pfcwallet -u rpcuser -P rpcpass
 If everything appears to be working, it is recommended at this point to
 copy the sample pfcd and pfcwallet configurations and update with your
 RPC username and password.
+
+
+
+Build and install from sources:
+```bash
+GO111MODULE=on
+
+  go version
+  go clean -testcache
+  go build -v ./...
+  go test -v ./...
+  go install . ./cmd/...
+```
 
 ## Issue Tracker
 
