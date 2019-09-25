@@ -6,8 +6,8 @@
 package main
 
 import (
+	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcwallet/netparams"
-	"github.com/picfight/pfcd/picfightcoin"
 )
 
 var activeNet = &PfcNetParams
@@ -15,7 +15,7 @@ var activeNet = &PfcNetParams
 // PfcNetParams contains parameters specific running pfcwallet and
 // pfcd on the main network (wire.MainNet).
 var PfcNetParams = netparams.Params{
-	Params:            &picfightcoin.PicFightCoinNetParams,
+	Params:            &chaincfg.PicFightCoinNetParams,
 	JSONRPCClientPort: "9109",
 	JSONRPCServerPort: "9110",
 	GRPCServerPort:    "9111",
