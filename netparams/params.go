@@ -24,7 +24,7 @@ var PicFightCoinNetParams = Params{
 }
 
 // MainNetParams contains parameters specific running pfcwallet and
-// pfcd on the main network (wire.MainNet).
+// pfcd on the main network (wire.DecredWire).
 var DecredNetParams = Params{
 	Params:            &chaincfg.DecredNetParams,
 	JSONRPCClientPort: "9109",

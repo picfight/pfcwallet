@@ -458,7 +458,9 @@ func (w *Wallet) txToMultisigInternal(op errors.Op, dbtx walletdb.ReadWriteTx, a
 	// fee estimator.
 	var feeEstForTx dcrutil.Amount
 	switch w.chainParams.Net {
-	case wire.MainNet:
+	case wire.PicfightCoinWire:
+		feeEstForTx = 5e7
+	case wire.DecredWire:
 		feeEstForTx = 5e7
 	case 0x48e7a065: // testnet2
 		feeEstForTx = 5e7
@@ -667,7 +669,10 @@ func (w *Wallet) compressWalletInternal(op errors.Op, dbtx walletdb.ReadWriteTx,
 	msgtx := wire.NewMsgTx()
 	msgtx.AddTxOut(wire.NewTxOut(0, pkScript))
 	maximumTxSize := maxTxSize
-	if w.chainParams.Net == wire.MainNet {
+	if w.chainParams.Net == wire.DecredWire {
+		maximumTxSize = maxStandardTxSize
+	}
+	if w.chainParams.Net == wire.PicfightCoinWire {
 		maximumTxSize = maxStandardTxSize
 	}
 
