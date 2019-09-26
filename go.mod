@@ -8,11 +8,11 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/gorilla/websocket v1.4.1
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec
+	github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a
 	github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4
 	github.com/jrick/bitset v1.0.0
 	github.com/jrick/logrotate v1.0.0
-	github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93
+	github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf
 	golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411
 	golang.org/x/net v0.0.0-20190926025831-c00fd9afed17
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e

@@ -24,6 +24,8 @@ github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJS
 github.com/jfixby/coinharness v0.0.0-20190926185122-3ff6bc845c84/go.mod h1:d/brli3srPhkdmg/3B9ZnaxEj6SgbZbGj27eapvPwOY=
 github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec h1:fpdGnFn+itGFvEhbm+H+u8WuKTFco2eePz8HGws+IHc=
 github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec/go.mod h1:xSXEkW0zBqOCyL49Pn5m2jMtjx+rjlB/EuPCJeP9g5Q=
+github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a h1:LIrKPA4Rmu4jiqnqjEB43hMUwjMADinQKoNfMRcTuys=
+github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a/go.mod h1:xSXEkW0zBqOCyL49Pn5m2jMtjx+rjlB/EuPCJeP9g5Q=
 github.com/jfixby/difficulty v1.0.0 h1:lvI8yfV7Mz09HvD70fB/PICgHjcbFa6HrA2ER8X1CNg=
 github.com/jfixby/difficulty v1.0.0/go.mod h1:eKUkJx0XjkDwjU7lA22IfU30feJcoObdPJ7rF46turk=
 github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4 h1:D7GpxLTy82tCGW56r/88JMHEC/d7VtHl/Q2jJ9awZKc=
@@ -34,6 +36,8 @@ github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+W
 github.com/onsi/gomega v1.4.1/go.mod h1:C1qb7wdrVGGVU+Z6iS04AVkA3Q65CEZX59MT0QO5uiA=
 github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93 h1:D6m0WGpkw7GdqVcldqIH6UTQdxrOeqSPDo0oHTYB+YI=
 github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93/go.mod h1:OcCDn81Sb0/nY+v/BF+ptN+QtKjNlVCRacseShkVgHk=
+github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf h1:O0fIMZxVdr32CbOxvHOzKe+kGGjL5mHMV2QHs5892Nw=
+github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf/go.mod h1:FDtoUcgfFVnYvJup5I35jK9RzDBBWszPXaFM18WW9AU=
 github.com/picfight/pfcharness v0.0.0-20190926171930-b728f233fcf8/go.mod h1:VsrBjNe0JhSWQw4W8hgvrGZgEAiwW1bRzi5KVGIfIXU=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411 h1:kuW9k4QvBJpRjC3rxEytsfIYPs8oGY3Jw7iR36h0FIY=
