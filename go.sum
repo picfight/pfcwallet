@@ -39,6 +39,8 @@ github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+W
 github.com/onsi/gomega v1.4.1/go.mod h1:C1qb7wdrVGGVU+Z6iS04AVkA3Q65CEZX59MT0QO5uiA=
 github.com/picfight/pfcd v0.0.0-20190929094910-803322417683 h1:UY4dCmhveUqq9pT7Fetae6PbCbj12NrQmbvMmp0zEjg=
 github.com/picfight/pfcd v0.0.0-20190929094910-803322417683/go.mod h1:AKD2jOzwp54C2lRvo93vOXqL3Gp9FzVFJ6VsYTipvnU=
+github.com/picfight/pfcd v0.0.0-20190929130907-7ff28614fbdf h1:tgxoCTLMIssCfbR6G1VxRAD+ulQWaEIqm37ek3blWWs=
+github.com/picfight/pfcd v0.0.0-20190929130907-7ff28614fbdf/go.mod h1:AKD2jOzwp54C2lRvo93vOXqL3Gp9FzVFJ6VsYTipvnU=
 github.com/picfight/picfightcoin v0.0.0-20190929093320-88e559613aa5 h1:+7gXbxSs6CsK4t5yJBNDE9ESXoqUFulY7DTk0FCibbM=
 github.com/picfight/picfightcoin v0.0.0-20190929093320-88e559613aa5/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
