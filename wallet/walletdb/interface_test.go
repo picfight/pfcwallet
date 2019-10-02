@@ -17,7 +17,6 @@
 package walletdb_test
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 
@@ -196,7 +195,7 @@ func testBucketInterface(tc *testContext, bucket walletdb.Bucket) bool {
 		// Ensure creating a bucket that already exists fails with the
 		// expected error.
 		if _, err := bucket.CreateBucket(testBucketName); !errors.Is(errors.Exist, err) {
-			tc.t.Errorf("CreateBucket: unexpected error: %v", err
+			tc.t.Errorf("CreateBucket: unexpected error: %v", err)
 			return false
 		}
 

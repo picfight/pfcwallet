@@ -9,6 +9,7 @@ package wallet
 // pfcwallet's header storage.
 
 import (
+	"github.com/picfight/picfightcoin"
 	"math/big"
 	"time"
 
@@ -240,16 +241,43 @@ func (w *Wallet) nextRequiredPoWDifficulty(dbtx walletdb.ReadTx, header *wire.Bl
 // number of votes included in every prior block (not including all votes
 // reduces the subsidy) and whether or not any of the prior blocks have been
 // invalidated by stakeholders thereby removing the PoW subsidy for them.
-func estimateSupply(params *chaincfg.Params, height int64) int64 {
+func estimateSupplyV2(net *chaincfg.Params, height int64) int64 {
+	if net.SubsidyCalculator != nil {
+		return net.SubsidyCalculator().EstimateSupply(height)
+	}
+	panic("No SubsidyCalculator provided")
+}
+
+func estimateSupplyV1(net *chaincfg.Params, height int64) int64 {
+	params := net.DecredSubsidyParams
+	if net == &chaincfg.DecredNetParams {
+		params = &picfightcoin.DecredSubsidyParams{
+			BaseSubsidy:              3119582664,
+			MulSubsidy:               100,
+			DivSubsidy:               101,
+			SubsidyReductionInterval: 6144,
+			// Subsidy parameters.
+		}
+	}
+	return estimateDecredSupply(params, height, net.BlockOneSubsidy())
+}
+
+func estimateSupply(net *chaincfg.Params, height int64) int64 {
+	if net.SubsidyCalculator != nil {
+		return estimateSupplyV2(net, height)
+	}
+	return estimateSupplyV1(net, height)
+}
+
+func estimateDecredSupply(params *picfightcoin.DecredSubsidyParams, height int64, BlockOneSubsidy int64) int64 {
 	if height <= 0 {
 		return 0
 	}
-
 	// Estimate the supply by calculating the full block subsidy for each
 	// reduction interval and multiplying it the number of blocks in the
 	// interval then adding the subsidy produced by number of blocks in the
 	// current interval.
-	supply := params.BlockOneSubsidy()
+	supply := BlockOneSubsidy
 	reductions := height / params.SubsidyReductionInterval
 	subsidy := params.BaseSubsidy
 	for i := int64(0); i < reductions; i++ {

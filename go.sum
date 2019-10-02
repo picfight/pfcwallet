@@ -43,12 +43,16 @@ github.com/picfight/pfcd v0.0.0-20191001115922-e4ae6dde5b1b h1:tz4Yz3HPYn9aCaaMb
 github.com/picfight/pfcd v0.0.0-20191001115922-e4ae6dde5b1b/go.mod h1:2ns8Bos4fB0DL9qvWyel2laxbrawQTbBy8aq5/ji9WM=
 github.com/picfight/pfcd v0.0.0-20191001125256-95b14803cbe6 h1:2Zr7axxvnK2hg0S0q+4CNKv3hIHyIvM1WaG6X3t9mSY=
 github.com/picfight/pfcd v0.0.0-20191001125256-95b14803cbe6/go.mod h1:N8xtsRnoSchi9HYOJDDPPUkpXcmnQ8y8M872qw2GvjU=
+github.com/picfight/pfcd v0.0.0-20191002190200-9b95798b6408 h1:YOMNlDtznr0gPtGClX1ANcIsLwopIWL2oKmBw8Tsv2o=
+github.com/picfight/pfcd v0.0.0-20191002190200-9b95798b6408/go.mod h1:hqWJoPxzwwvtYcwSVVLnsQ94m6nTozu9Yxk9Gc4AUfo=
 github.com/picfight/picfightcoin v0.0.0-20190930150635-03da47866cbd h1:GVdVk8msxZ5RKxcEOBii9Vy/fj1Mlsr4LYJ4giEF7Ik=
 github.com/picfight/picfightcoin v0.0.0-20190930150635-03da47866cbd/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
 github.com/picfight/picfightcoin v0.0.0-20191001115746-c680a917d1fe h1:q+o3HxSv/u67nKRb5Q1b/egqxJgY9Ck0nZp00AJvzmg=
 github.com/picfight/picfightcoin v0.0.0-20191001115746-c680a917d1fe/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
 github.com/picfight/picfightcoin v0.0.0-20191001123624-84c8bd500392 h1:VRLJNVZVXZdcK/gzwADaYxQG13JCGvwUZEjJ7k1RQns=
 github.com/picfight/picfightcoin v0.0.0-20191001123624-84c8bd500392/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
+github.com/picfight/picfightcoin v0.0.0-20191002184602-b5e70e4070ea h1:rPCedxD0FT6mjcEPwvrAzP3LBbKNJaNJMWcmubDvXkg=
+github.com/picfight/picfightcoin v0.0.0-20191002184602-b5e70e4070ea/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190927123631-a832865fa7ad h1:5E5raQxcv+6CZ11RrBYQe5WRbUIWpScjh0kvHZkZIrQ=
 golang.org/x/crypto v0.0.0-20190927123631-a832865fa7ad/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
