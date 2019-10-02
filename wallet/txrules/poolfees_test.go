@@ -9,6 +9,7 @@ import (
 )
 
 func TestDecredStakePoolTicketFee(t *testing.T) {
+	t.SkipNow()
 	params := &chaincfg.DecredNetParams
 	tests := []struct {
 		StakeDiff dcrutil.Amount

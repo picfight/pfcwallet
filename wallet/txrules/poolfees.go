@@ -50,8 +50,10 @@ func StakePoolTicketFee(stakeDiff dcrutil.Amount, relayFee dcrutil.Amount,
 	// pool size (params.TicketPoolSize), so take the
 	// ceiling of the ticket pool size divided by the
 	// reduction interval.
+	panic("Not implemented yet!")
+	SubsidyReductionInterval := -1
 	adjs := int(math.Ceil(float64(params.TicketPoolSize) /
-		float64(params.SubsidyReductionInterval)))
+		float64(SubsidyReductionInterval)))
 	initSubsidyCacheOnce.Do(func() {
 		subsidyCache = blockchain.NewSubsidyCache(int64(height), params)
 	})
