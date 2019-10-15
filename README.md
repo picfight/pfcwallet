@@ -1,13 +1,202 @@
 pfcwallet
 =========
 
-pfcwallet is a daemon handling PicFight coin wallet functionality.  All interaction
-with the wallet is performed over RPC.
+```pfcwallet`` is a daemon handling PicFight coin wallet functionality.
+ 
+The wallet connects to the ```pfcd``` node via RPC. All interaction
+with the wallet is also performed over RPC.
+
+## Installing and updating
+
+### Setup
+
+Building or updating from source requires the following build dependencies:
+
+- **Git**
+
+  Installation instructions can be found at https://git-scm.com or
+  https://gitforwindows.org.
+  
+- **Go 1.13**
+
+  Installation instructions can be found here: https://golang.org/doc/install.
+  It is recommended to add `$GOPATH/bin` to your `PATH` at this point.
+
+* The `pfcd` executable will be installed to `$GOPATH/bin`.  `GOPATH`
+  defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
+  
+### Build from source (all platforms)
+
+Tip: You can always verify your steps against the Travis. Simply consult with the
+```.travis.yml``` and the ```run_tests.sh``` for the details.
+
+### Example of obtaining and building from source on Windows:
+
+Checkout:
+```bash
+go get github.com/picfight/pfcd
+go get github.com/picfight/pfcwallet
+```
+
+Build and install pfcd:
+```bash
+cd %GOPATH%
+cd src/github.com/picfight/pfcd
+
+set GO111MODULE=on
+go build ./...
+go install . ./cmd/...
+```
+
+Build and install pfcwallet:
+```bash
+cd %GOPATH%
+cd src/github.com/picfight/pfcwallet
+
+set GO111MODULE=on
+go build ./...
+go install . ./cmd/...
+```
+
+### Running Tests
+
+To run the tests locally:
+
+```bash
+cd %GOPATH%
+cd src/github.com/picfight/pfcwallet
+
+set GO111MODULE=on
+go build ./...
+go clean -testcache
+go test ./...
+```
+
+or simply
+```bash
+./run_tests.sh 
+```
+
+## Getting Started
+
+- Run the following command to start pfcd:
+
+```bash
+pfcd -u rpcuser -P rpcpass
+```
+
+- Run the following command to create a wallet:
+
+```bash
+pfcwallet -u rpcuser -P rpcpass --create
+```
+
+- Run the following command to start pfcwallet:
+
+```bash
+pfcwallet -u rpcuser -P rpcpass
+```
+
+If everything appears to be working, it is recommended at this point to
+copy the sample pfcd and pfcwallet configurations (.conf) and update with your
+RPC username and password.
+
+Then simply run: 
+```bash
+pfcd
+pfcwallet
+``` 
+
+## Example run commands
+
+Launch customized node:
+```bash
+pfcd
+     --listen=127.0.0.1:30000
+     --rpclisten=127.0.0.1:30001
+     --datadir=nodeA
+     --rpccert=nodeA\rpc.cert
+     --rpckey=nodeA\rpc.key     
+     --txindex
+     --addrindex
+     --rpcuser=node.user
+     --rpcpass=node.pass
+```
+
+Copy `nodeA\rpc.cert` to `wallet\pfcd-rpc.cert` 
+
+Launch wallet (add `--create` flag-option for the first run):
+```bash
+pfcwallet
+       --rpclisten=127.0.0.1:20002
+       --rpcconnect=127.0.0.1:30001
+       --appdata=wallet
+       --cafile=wallet\pfcd-rpc.cert
+       --rpckey=wallet\rpc.key
+       --rpccert=wallet\rpc.cert
+       --pfcdusername=node.user
+       --pfcdpassword=node.pass
+       --username=wallet.user
+       --password=wallet.pass 
+```
+```bash
+       --create 
+```
+
+Check balance:
+```bash
+pfcctl /u wallet.user
+       /P wallet.pass
+       /s 127.0.0.1:20002
+       /c wallet\rpc.cert
+       --wallet getbalance
+```
+
+Generate new wallet address:
+```bash
+pfcctl /u wallet.user
+       /P wallet.pass
+       /s 127.0.0.1:20002
+       /c wallet\rpc.cert
+       --wallet getnewaddress
+```
+
+## Stake-mining
+
+Participating in Proof-of-Stake (PoS) validation requires a wallet to be
+running 24/7. The wallet needs to be always online so that it can be called
+to validate block; if the wallet is unavailable then the votes will be missed
+and no block reward will be received.
+
+Tip: Stake-mining wallet will use all of its funds to buy voting tickets.
+Thus it is recommended to create a dedicated wallet (with a new seed) for stake
+mining and transfer to it some of your funds from your main wallet. Min possible
+ticket price is 2 coins + fees. So you need at least ~2.1 coins to buy a ticket and to
+participate in the stake mining.
+
+To enable stake-mining in pfcwallet you need:
+
+- Edit your `pfcwallet.conf` setting `pass=`%your wallet password% and the `enablevoting=1` flag.
+
+- Run `pfcwallet` with the following flag: `--enableticketbuyer`
+
+At this point you should have a running `pfcd`-node connected to internet
+and syncing with the external world, and `pfcwallet` connected to the `pfcd`
+listening to the block-chain updates and validating blocks on request.
+
+Check your setup using the following commands:
+```bash
+ pfcctl --wallet getstakeinfo
+ pfcctl --wallet walletinfo
+``` 
+
+## SPV 
 
 pfcwallet provides two modes of operation to connect to the PicFight coin
 network.  The first (and default) is to communicate with a single
-trusted `pfcd` instance using JSON-RPC.  The second is a
-privacy-preserving Simplified Payment Verification (SPV) mode (enabled
+trusted `pfcd` instance using JSON-RPC.
+
+The second is a privacy-preserving Simplified Payment Verification (SPV) mode (enabled
 with the `--spv` flag) where the wallet connects either to specified
 peers (with `--spvconnect`) or peers discovered from seeders and other
 peers. Both modes can be switched between with just a restart of the
@@ -44,125 +233,6 @@ Wallet clients interact with the wallet using one of two RPC servers:
      due to API changes, don't want to deal with issues of the legacy API, or
      need notifications for changes to the wallet, this is the RPC server to
      use. The gRPC server is documented [here](./rpc/documentation/README.md).
-
-## Installation
-
-### Build from source (all platforms)
-
-Building or updating from source requires the following build dependencies:
-
-- **Go**
-
-  Installation instructions can be found here: https://golang.org/doc/install.
-  It is recommended to add `$GOPATH/bin` to your `PATH` at this point.
-
-To build and install from a checked-out repo, run `go install` in the repo's
-root directory.  Some notes:
-
-* Set the `GO111MODULE=on` environment variable if using Go 1.11 and building
-  from within `GOPATH`.
-
-* The `pfcwallet` executable will be installed to `$GOPATH/bin`.  `GOPATH`
-  defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
-
-```bash
-set GO111MODULE=on
-  go version
-  go build -v ./...
-  go install . ./cmd/...
-```
-
-## Testing
-
-To run the tests locally:
-
-```bash
-./run_tests.sh 
-```
-
-## Getting Started
-
-The following instructions detail how to get started with pfcwallet connecting
-to a localhost pfcd.  Commands should be run in `cmd.exe` or PowerShell on
-Windows, or any terminal emulator on *nix.
-
-- Run the following command to start pfcd:
-
-```bash
-pfcd -u rpcuser -P rpcpass
-```
-
-- Run the following command to create a wallet:
-
-```bash
-pfcwallet -u rpcuser -P rpcpass --create
-```
-
-- Run the following command to start pfcwallet:
-
-```bash
-pfcwallet -u rpcuser -P rpcpass
-```
-
-If everything appears to be working, it is recommended at this point to
-copy the sample pfcd and pfcwallet configurations and update with your
-RPC username and password.
-
-## Example run commands
-
-Launch mining node:
-```bash
-pfcd
-     --generate
-     --miningaddr "JsCVh5SVDQovpW1dswaZNan2mfNWy6uRpPx"
-     --listen=127.0.0.1:30000
-     --rpclisten=127.0.0.1:30001
-     --datadir=nodeA
-     --rpccert=nodeA\rpc.cert
-     --rpckey=nodeA\rpc.key     
-     --txindex
-     --addrindex
-     --rpcuser=node.user
-     --rpcpass=node.pass
-```
-
-Copy `nodeA\rpc.cert` to `wallet\pfcd-rpc.cert` 
-
-Launch wallet, add `--create` flag for the first run:
-```bash
-pfcwallet
-       --rpclisten=127.0.0.1:20002
-       --rpcconnect=127.0.0.1:30001
-       --appdata=wallet
-       --cafile=wallet\pfcd-rpc.cert
-       --rpckey=wallet\rpc.key
-       --rpccert=wallet\rpc.cert
-       --pfcdusername=node.user
-       --pfcdpassword=node.pass
-       --username=wallet.user
-       --password=wallet.pass 
-```
-```bash
-       --create 
-```
-
-Check balance:
-```bash
-pfcctl /u wallet.user
-       /P wallet.pass
-       /s 127.0.0.1:20002
-       /c wallet\rpc.cert
-       --wallet getbalance
-```
-
-Generate wallet address:
-```bash
-pfcctl /u wallet.user
-       /P wallet.pass
-       /s 127.0.0.1:20002
-       /c wallet\rpc.cert
-       --wallet getnewaddress
-```
 
 ## Issue Tracker
 
