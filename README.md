@@ -1,9 +1,9 @@
 pfcwallet
 =========
 
-```pfcwallet`` is a daemon handling PicFight coin wallet functionality.
+```pfcwallet``` is a daemon handling PicFight coin wallet functionality.
  
-The wallet connects to the ```pfcd``` node via RPC. All interaction
+The wallet connects to a ```pfcd``` node via RPC. All interaction
 with the wallet is also performed over RPC.
 
 ## Installing and updating
@@ -189,6 +189,16 @@ Check your setup using the following commands:
  pfcctl --wallet getstakeinfo
  pfcctl --wallet walletinfo
 ``` 
+
+Check balance:
+```bash
+pfcctl --wallet getbalance
+```
+
+Generate a new wallet address:
+```bash
+pfcctl --wallet getnewaddress
+```
 
 ## SPV 
 
