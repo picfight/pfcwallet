@@ -1,10 +1,10 @@
 pfcwallet
 =========
 
-```pfcwallet``` is a daemon handling PicFight coin wallet functionality.
+```pfcwallet``` is a daemon handling the PicFight coin wallet functionality.
  
-The wallet connects to a ```pfcd``` node via RPC. All interaction
-with the wallet is also performed over RPC.
+The wallet connects to a ```pfcd``` node via RPC. All interactions
+with the wallet are also performed over RPC.
 
 ## Installing and updating
 
@@ -98,7 +98,7 @@ pfcwallet -u rpcuser -P rpcpass
 ```
 
 If everything appears to be working, it is recommended at this point to
-copy the sample pfcd and pfcwallet configurations (.conf) and update with your
+copy the sample pfcd and pfcwallet configurations (.conf) and update them with your
 RPC username and password.
 
 Then simply run: 
@@ -109,7 +109,7 @@ pfcwallet
 
 ## Example run commands
 
-Launch customized node:
+Launch a customized node:
 ```bash
 pfcd
      --listen=127.0.0.1:30000
@@ -182,7 +182,7 @@ To enable stake-mining in pfcwallet you need:
 
 At this point you should have a running `pfcd`-node connected to internet
 and syncing with the external world, and `pfcwallet` connected to the `pfcd`
-listening to the block-chain updates and validating blocks on request.
+listening to the blockchain updates and validating blocks on request.
 
 Check your setup using the following commands:
 ```bash
@@ -207,7 +207,7 @@ network.  The first (and default) is to communicate with a single
 trusted `pfcd` instance using JSON-RPC.
 
 The second is a privacy-preserving Simplified Payment Verification (SPV) mode (enabled
-with the `--spv` flag) where the wallet connects either to specified
+with the `--spv` flag), where the wallet connects either to specified
 peers (with `--spvconnect`) or peers discovered from seeders and other
 peers. Both modes can be switched between with just a restart of the
 wallet. It is advised to avoid SPV mode for heavily-used wallets
@@ -228,7 +228,7 @@ Wallet clients interact with the wallet using one of two RPC servers:
   1. A legacy JSON-RPC server inspired by the Bitcoin Core rpc server
 
      The JSON-RPC server exists to ease the migration of wallet applications
-     from Core, but complete compatibility is not guaranteed.  Some portions of
+     from the Core, but complete compatibility is not guaranteed.  Some portions of
      the API (and especially accounts) have to work differently due to other
      design decisions (mostly due to BIP0044).  However, if you find a
      compatibility issue and feel that it could be reasonably supported, please
