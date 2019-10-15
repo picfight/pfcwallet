@@ -22,7 +22,7 @@ Building or updating from source requires the following build dependencies:
   Installation instructions can be found here: https://golang.org/doc/install.
   It is recommended to add `$GOPATH/bin` to your `PATH` at this point.
 
-* The `pfcd` executable will be installed to `$GOPATH/bin`.  `GOPATH`
+* The `pfcd` and `pfcwallet` executables will be installed to `$GOPATH/bin`.  `GOPATH`
   defaults to `$HOME/go` (or `%USERPROFILE%\go` on Windows) if unset.
   
 ### Build from source (all platforms)
